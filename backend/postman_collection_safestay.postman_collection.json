@@ -1,0 +1,195 @@
+{
+  "info": {
+    "name": "SafeStay Hub - API",
+    "_postman_id": "d2a8f3b6-0000-4000-8000-abcdef123456",
+    "description": "Postman collection for SafeStay Hub backend (health + core endpoints). Replace {{baseUrl}} and set {{token}} after login.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:5000" },
+    { "key": "token", "value": "" },
+    { "key": "hostelId", "value": "" },
+    { "key": "roomId", "value": "" },
+    { "key": "canteenId", "value": "" },
+    { "key": "contractId", "value": "" },
+    { "key": "userId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["api","health"]
+        }
+      }
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test User\",\n  \"email\": \"test+1@example.com\",\n  \"phone\": \"9876543210\",\n  \"password\": \"password123\",\n  \"role\": \"tenant\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api","auth","register"] }
+          }
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" } ],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"test+1@example.com\",\n  \"password\": \"password123\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/auth/login", "host": ["{{baseUrl}}"], "path": ["api","auth","login"] }
+          }
+        },
+        {
+          "name": "GetMe (protected)",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{baseUrl}}/api/auth/me", "host": ["{{baseUrl}}"], "path": ["api","auth","me"] }
+          }
+        },
+        {
+          "name": "Update Profile (protected)",
+          "request": {
+            "method": "PUT",
+            "header": [ { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Updated Name\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/auth/profile", "host": ["{{baseUrl}}"], "path": ["api","auth","profile"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Owner",
+      "item": [
+        {
+          "name": "Create Hostel (protected)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Green Valley PG\",\n  \"address\": { \"street\": \"123 Main St\", \"city\": \"Mysore\", \"state\": \"Karnataka\", \"pincode\": \"570001\" },\n  \"description\": \"Comfortable PG with all amenities\",\n  \"hostelType\": \"boys\",\n  \"amenities\": [\"WiFi\", \"AC\", \"Laundry\"],\n  \"priceRange\": { \"min\": 5000, \"max\": 8000 }\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/owner/hostels", "host": ["{{baseUrl}}"], "path": ["api","owner","hostels"] }
+          }
+        },
+        {
+          "name": "Get My Hostels (protected)",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{baseUrl}}/api/owner/hostels", "host": ["{{baseUrl}}"], "path": ["api","owner","hostels"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tenant",
+      "item": [
+        {
+          "name": "Search Hostels (protected)",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{baseUrl}}/api/tenant/hostels/search?city=Mysore", "host": ["{{baseUrl}}"], "path": ["api","tenant","hostels","search"], "query": [ { "key": "city", "value": "Mysore" } ] }
+          }
+        },
+        {
+          "name": "Get Hostel Details (protected)",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{baseUrl}}/api/tenant/hostels/{{hostelId}}", "host": ["{{baseUrl}}"], "path": ["api","tenant","hostels","{{hostelId}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Canteen",
+      "item": [
+        {
+          "name": "Create Order (protected)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "body": { "mode": "raw", "raw": "{\n  \"canteen\": \"{{canteenId}}\",\n  \"items\": [ { \"menuItem\": \"<menuItemId>\", \"quantity\": 2 } ],\n  \"deliveryAddress\": { \"roomNumber\": \"101\", \"floor\": 1 },\n  \"specialInstructions\": \"Leave at the gate if not available\"\n}" },
+            "url": { "raw": "{{baseUrl}}/api/canteen/orders", "host": ["{{baseUrl}}"], "path": ["api","canteen","orders"] }
+          }
+        },
+        {
+          "name": "Get My Orders (Tenant)",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{baseUrl}}/api/canteen/my-orders", "host": ["{{baseUrl}}"], "path": ["api","canteen","my-orders"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Contract",
+      "item": [
+        {
+          "name": "Create Contract (Owner)",
+          "request": {
+            "method": "POST",
+            "header": [ { "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "body": { "mode": "raw", "raw": "{\n  \"tenant\": \"{{userId}}\",\n  \"hostel\": \"{{hostelId}}\",\n  \"room\": \"{{roomId}}\",\n  \"startDate\": \"2025-11-01\",\n  \"endDate\": \"2026-10-31\",\n  \"monthlyRent\": 7000,\n  \"securityDeposit\": 14000,\n  \"terms\": [ { \"clause\": \"Payment\", \"description\": \"Rent due on 1st of every month\" } ]\n}" },
+            "url": { "raw": "{{baseUrl}}/api/contract", "host": ["{{baseUrl}}"], "path": ["api","contract"] }
+          }
+        },
+        {
+          "name": "Get Owner Contracts (protected)",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{baseUrl}}/api/contract/owner/contracts", "host": ["{{baseUrl}}"], "path": ["api","contract","owner","contracts"] }
+          }
+        },
+        {
+          "name": "Sign Contract (protected)",
+          "request": {
+            "method": "PUT",
+            "header": [ { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{baseUrl}}/api/contract/{{contractId}}/sign", "host": ["{{baseUrl}}"], "path": ["api","contract","{{contractId}}","sign"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Get All Users (admin)",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{baseUrl}}/api/admin/users", "host": ["{{baseUrl}}"], "path": ["api","admin","users"] }
+          }
+        },
+        {
+          "name": "Get Dashboard Stats (admin)",
+          "request": {
+            "method": "GET",
+            "header": [ { "key": "Authorization", "value": "Bearer {{token}}" } ],
+            "url": { "raw": "{{baseUrl}}/api/admin/stats", "host": ["{{baseUrl}}"], "path": ["api","admin","stats"] }
+          }
+        }
+      ]
+    }
+  ]
+}
