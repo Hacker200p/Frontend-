@@ -42,6 +42,14 @@ const roomSchema = new mongoose.Schema({
     url: String,
     publicId: String,
   }],
+  videoUrl: {
+    type: String,
+    default: '',
+  },
+  view360Url: {
+    type: String,
+    default: '',
+  },
   isAvailable: {
     type: Boolean,
     default: true,

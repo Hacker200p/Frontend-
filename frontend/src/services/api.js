@@ -85,6 +85,19 @@ export const ownerAPI = {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
   },
+  uploadRoomMedia: (roomId, files, mediaType = 'photos') => {
+    const form = new FormData()
+    if (mediaType === 'photos') {
+      for (const f of files) form.append('photos', f)
+    } else if (mediaType === 'video') {
+      form.append('video', files[0])
+    } else if (mediaType === 'view360') {
+      form.append('view360', files[0])
+    }
+    return api.post(`/owner/rooms/${roomId}/upload`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
   createRoom: (hostelId, data) => api.post(`/owner/hostels/${hostelId}/rooms`, data),
   getHostelRooms: (hostelId) => api.get(`/owner/hostels/${hostelId}/rooms`),
   updateRoom: (roomId, data) => api.put(`/owner/rooms/${roomId}`, data),

@@ -8,6 +8,7 @@ const {
   createRoom,
   getHostelRooms,
   updateRoom,
+  uploadRoomMedia,
 } = require('../controllers/ownerController');
 const { protect } = require('../middleware/authMiddleware');
 const { authorize } = require('../middleware/roleMiddleware');
@@ -33,5 +34,10 @@ router.route('/hostels/:id/rooms')
 
 router.put('/rooms/:id', updateRoom);
 router.delete('/rooms/:id', require('../controllers/ownerController').deleteRoom);
+router.post('/rooms/:id/upload', upload.fields([
+  { name: 'photos', maxCount: 10 },
+  { name: 'video', maxCount: 1 },
+  { name: 'view360', maxCount: 1 }
+]), uploadRoomMedia);
 
 module.exports = router;

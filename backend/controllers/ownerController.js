@@ -216,19 +216,39 @@ const createRoom = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
 
-    const room = await Room.create({
-      ...req.body,
-      hostel: hostel._id,
-    });
+    // Extract numberOfRooms from request body (default to 1 if not provided)
+    const { numberOfRooms = 1, roomNumber, ...roomData } = req.body;
+    const numRooms = parseInt(numberOfRooms);
 
-    hostel.totalRooms += 1;
-    if (room.isAvailable) {
-      hostel.availableRooms += 1;
+    // Create multiple rooms in a loop
+    const createdRooms = [];
+    let availableCount = 0;
+
+    for (let i = 0; i < numRooms; i++) {
+      const room = await Room.create({
+        ...roomData,
+        roomNumber: numRooms === 1 ? roomNumber : `${roomNumber}-${i + 1}`,
+        hostel: hostel._id,
+      });
+      
+      createdRooms.push(room);
+      
+      if (room.isAvailable) {
+        availableCount++;
+      }
     }
+
+    // Update hostel's total and available room counts
+    hostel.totalRooms += numRooms;
+    hostel.availableRooms += availableCount;
 
     await hostel.save();
 
-    res.status(201).json({ success: true, data: room });
+    res.status(201).json({ 
+      success: true, 
+      data: createdRooms,
+      message: `${numRooms} room(s) created successfully`
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -314,6 +334,81 @@ const deleteRoom = async (req, res) => {
   }
 };
 
+// @desc    Upload room media (photos, video, 360 view)
+// @route   POST /api/owner/rooms/:id/upload
+// @access  Private/Owner
+const uploadRoomMedia = async (req, res) => {
+  try {
+    const room = await Room.findById(req.params.id).populate('hostel');
+    
+    if (!room) {
+      return res.status(404).json({ success: false, message: 'Room not found' });
+    }
+    
+    if (room.hostel.owner.toString() !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+    }
+
+    const files = req.files;
+    
+    // Handle photos
+    if (files.photos) {
+      const photoPromises = files.photos.map(file => {
+        return new Promise((resolve, reject) => {
+          const stream = cloudinary.uploader.upload_stream(
+            { resource_type: 'image', folder: 'safestay/rooms/photos' },
+            (error, result) => {
+              if (error) reject(error);
+              else resolve({ url: result.secure_url, publicId: result.public_id });
+            }
+          );
+          stream.end(file.buffer);
+        });
+      });
+      
+      const uploadedPhotos = await Promise.all(photoPromises);
+      room.photos.push(...uploadedPhotos);
+    }
+    
+    // Handle video
+    if (files.video && files.video[0]) {
+      const videoResult = await new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          { resource_type: 'video', folder: 'safestay/rooms/videos' },
+          (error, result) => {
+            if (error) reject(error);
+            else resolve(result.secure_url);
+          }
+        );
+        stream.end(files.video[0].buffer);
+      });
+      room.videoUrl = videoResult;
+    }
+    
+    // Handle 360 view
+    if (files.view360 && files.view360[0]) {
+      const view360Result = await new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          { resource_type: 'image', folder: 'safestay/rooms/360views' },
+          (error, result) => {
+            if (error) reject(error);
+            else resolve(result.secure_url);
+          }
+        );
+        stream.end(files.view360[0].buffer);
+      });
+      room.view360Url = view360Result;
+    }
+    
+    await room.save();
+    
+    res.json({ success: true, data: room, message: 'Media uploaded successfully' });
+  } catch (error) {
+    console.error('Upload error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   createHostel,
   getMyHostels,
@@ -325,4 +420,5 @@ module.exports = {
   getHostelRooms,
   updateRoom,
   deleteRoom,
+  uploadRoomMedia,
 };

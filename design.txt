@@ -24,6 +24,39 @@ SafeStay Hub - Frontend Design Documentation
  • Manage Hostels: Update availability, edit details, view tenant reports.
  • Media Upload: Drag-drop 360° upload, preview, submit for verification.
  • Feedback: Charts summarizing tenant feedback and ratings.
+ -----------------------------------------------------------
+ADD ROOM PAGE (NEW TAB)-----------------------------------------------------------
+Layout:- Sidebar Navigation:
+    - Dashboard
+    - Add Hostel
+    - Add Room (new)
+    - Reports- Sidebar Style: bg-primary text-white w-64 fixed left-0 top-0 h-full- Active Tab Highlight: bg-blue-700 rounded-lg text-white
+ Main Content:- Container: ml-64 p-8 bg-background min-h-screen- Header: text-2xl font-semibold text-gray-800 mb-6
+- Form Layout: card max-w-3xl mx-auto p-6 bg-white rounded-2xl shadow-md
+ Form Fields:- Room Name: .input mb-3- Room Type: .input mb-3 (Dropdown: Single, Double, Deluxe)- Price per Night: .input mb-3- Max Occupancy: .input mb-3- Description: .input mb-3 h-24- Availability Toggle: .flex items-center gap-2 mt-2 text-sm text-muted- Submit Button: .btn-primary w-full mt-4
+ Custom CSS:
+ .room-form-container {
+  @apply max-w-3xl mx-auto p-8 bg-white rounded-2xl shadow-md;
+ }
+ .toggle-switch {
+  @apply relative inline-flex items-center cursor-pointer;
+ }
+ .toggle-switch input {
+  @apply sr-only;
+ }
+ .toggle-switch span {
+  @apply w-10 h-6 bg-gray-300 rounded-full shadow-inner transition-all;
+ }
+ .toggle-switch input:checked + span {
+  @apply bg-primary;
+ }
+ .toggle-switch span:before {
+  content: '';
+  @apply absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform;
+ }
+ .toggle-switch input:checked + span:before {
+  @apply translate-x-4;
+ }
  4. Canteen Owner Dashboard
  • Sidebar: Dashboard, Orders Management, Tenant Preferences, Feedback, Delivery
  Coordination, Settings.
