@@ -47,7 +47,7 @@ const contractSchema = new mongoose.Schema({
     description: String,
   }],
   penalties: [{
-    type: String,
+    penaltyType: String,
     amount: Number,
     description: String,
   }],
@@ -76,6 +76,8 @@ const contractSchema = new mongoose.Schema({
     enum: ['draft', 'pending_signatures', 'active', 'expired', 'terminated'],
     default: 'draft',
   },
+  paymentId: String,
+  orderId: String,
   terminationReason: String,
   terminatedAt: Date,
 }, { timestamps: true });

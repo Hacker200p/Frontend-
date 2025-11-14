@@ -9,6 +9,9 @@ const {
   getHostelRooms,
   updateRoom,
   uploadRoomMedia,
+  getMyTenants,
+  getHostelTenants,
+  terminateTenantContract,
 } = require('../controllers/ownerController');
 const { protect } = require('../middleware/authMiddleware');
 const { authorize } = require('../middleware/roleMiddleware');
@@ -39,5 +42,10 @@ router.post('/rooms/:id/upload', upload.fields([
   { name: 'video', maxCount: 1 },
   { name: 'view360', maxCount: 1 }
 ]), uploadRoomMedia);
+
+// Tenant management routes
+router.get('/tenants', getMyTenants);
+router.get('/hostels/:id/tenants', getHostelTenants);
+router.post('/tenants/:contractId/terminate', terminateTenantContract);
 
 module.exports = router;

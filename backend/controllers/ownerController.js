@@ -412,6 +412,106 @@ const uploadRoomMedia = async (req, res) => {
   }
 };
 
+// @desc    Get all tenants across owner's hostels
+// @route   GET /api/owner/tenants
+// @access  Private/Owner
+const getMyTenants = async (req, res) => {
+  try {
+    const Contract = require('../models/Contract');
+    
+    // Get all hostels owned by this owner
+    const hostels = await Hostel.find({ owner: req.user.id }).select('_id name');
+    const hostelIds = hostels.map(h => h._id);
+
+    // Get all contracts for these hostels
+    const contracts = await Contract.find({ 
+      hostel: { $in: hostelIds },
+      status: { $in: ['active', 'pending_signatures', 'draft'] }
+    })
+    .populate('tenant', 'name email phone')
+    .populate('hostel', 'name address')
+    .populate('room', 'roomNumber floor roomType')
+    .sort({ createdAt: -1 });
+
+    res.json({ success: true, data: contracts });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Get tenants for a specific hostel
+// @route   GET /api/owner/hostels/:id/tenants
+// @access  Private/Owner
+const getHostelTenants = async (req, res) => {
+  try {
+    const Contract = require('../models/Contract');
+    
+    const hostel = await Hostel.findById(req.params.id);
+    if (!hostel) {
+      return res.status(404).json({ success: false, message: 'Hostel not found' });
+    }
+
+    if (hostel.owner.toString() !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+    }
+
+    const contracts = await Contract.find({ 
+      hostel: req.params.id,
+      status: { $in: ['active', 'pending_signatures', 'draft'] }
+    })
+    .populate('tenant', 'name email phone')
+    .populate('room', 'roomNumber floor roomType capacity currentOccupancy')
+    .sort({ createdAt: -1 });
+
+    res.json({ success: true, data: contracts });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Remove tenant from room (terminate contract)
+// @route   POST /api/owner/tenants/:contractId/terminate
+// @access  Private/Owner
+const terminateTenantContract = async (req, res) => {
+  try {
+    const Contract = require('../models/Contract');
+    
+    const contract = await Contract.findById(req.params.contractId)
+      .populate('hostel', 'owner')
+      .populate('room');
+
+    if (!contract) {
+      return res.status(404).json({ success: false, message: 'Contract not found' });
+    }
+
+    if (contract.hostel.owner.toString() !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+    }
+
+    // Update contract status
+    contract.status = 'terminated';
+    contract.endDate = new Date();
+    await contract.save();
+
+    // Update room availability
+    const room = contract.room;
+    if (room.currentOccupancy > 0) {
+      room.currentOccupancy -= 1;
+    }
+    if (room.currentOccupancy < room.capacity) {
+      room.isAvailable = true;
+    }
+    
+    // Remove tenant from room's tenants array
+    room.tenants = room.tenants.filter(t => t.toString() !== contract.tenant.toString());
+    await room.save();
+
+    res.json({ success: true, message: 'Contract terminated successfully', data: contract });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   createHostel,
   getMyHostels,
@@ -424,4 +524,7 @@ module.exports = {
   updateRoom,
   deleteRoom,
   uploadRoomMedia,
+  getMyTenants,
+  getHostelTenants,
+  terminateTenantContract,
 };

@@ -80,6 +80,9 @@ export const tenantAPI = {
   addExpense: (data) => api.post('/tenant/expenses', data),
   submitFeedback: (data) => api.post('/tenant/feedback', data),
   getContracts: () => api.get('/tenant/contracts'),
+  getMyContracts: () => api.get('/tenant/contracts'),
+  createBookingOrder: (data) => api.post('/tenant/create-booking-order', data),
+  bookRoom: (data) => api.post('/tenant/book-room', data),
 }
 
 // Owner API calls
@@ -113,6 +116,10 @@ export const ownerAPI = {
   updateRoom: (roomId, data) => api.put(`/owner/rooms/${roomId}`, data),
   deleteRoom: (roomId) => api.delete(`/owner/rooms/${roomId}`),
   deleteMedia: (hostelId, publicId) => api.delete(`/owner/hostels/${hostelId}/media`, { params: { publicId } }),
+  // Tenant management
+  getMyTenants: () => api.get('/owner/tenants'),
+  getHostelTenants: (hostelId) => api.get(`/owner/hostels/${hostelId}/tenants`),
+  terminateTenantContract: (contractId) => api.post(`/owner/tenants/${contractId}/terminate`),
 }
 
 export default api

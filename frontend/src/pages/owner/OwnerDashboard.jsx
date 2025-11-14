@@ -51,10 +51,10 @@ export default function OwnerDashboard() {
   const [uploaded360View, setUploaded360View] = useState(null)
   const [allRooms, setAllRooms] = useState([])
   const [currentImageIndex, setCurrentImageIndex] = useState({}) // Track current image for each room
-  const [tenantRequests, setTenantRequests] = useState([
-    { id: 'REQ-001', name: 'Aman Sharma', hostel: 'Green Valley', roomType: 'Single' },
-    { id: 'REQ-002', name: 'Neha Verma', hostel: 'City Nest', roomType: 'Shared' },
-  ])
+  const [tenants, setTenants] = useState([])
+  const [tenantsLoading, setTenantsLoading] = useState(false)
+  const [selectedTenantHostel, setSelectedTenantHostel] = useState('all')
+  const [tenantSearchQuery, setTenantSearchQuery] = useState('')
   
   // Add Room form state
   const [roomForm, setRoomForm] = useState({
@@ -101,7 +101,7 @@ export default function OwnerDashboard() {
     activeHostels: hostels.length,
     roomsAvailable: hostels.reduce((sum, h) => sum + (h.availableRooms || 0), 0),
     pendingVerifications: hostels.filter((h) => h.verificationStatus === 'pending').length,
-    tenantRequests: tenantRequests.length,
+    activeTenants: tenants.filter(t => t.status === 'active').length,
   }
   const handlePickMedia = (e) => {
     const files = Array.from(e.target.files || [])
@@ -167,7 +167,38 @@ export default function OwnerDashboard() {
       .catch(() => {
         // If API fails, keep empty list; UI will still function
       })
+    
+    // Load tenants
+    fetchTenants()
   }, [])
+
+  const fetchTenants = async () => {
+    try {
+      setTenantsLoading(true)
+      const res = await ownerAPI.getMyTenants()
+      setTenants(res.data?.data || [])
+    } catch (error) {
+      console.error('Error fetching tenants:', error)
+      setTenants([])
+    } finally {
+      setTenantsLoading(false)
+    }
+  }
+
+  const handleTerminateTenant = async (contractId) => {
+    if (!confirm('Are you sure you want to terminate this tenant contract? This will make the room available again.')) {
+      return
+    }
+    
+    try {
+      await ownerAPI.terminateTenantContract(contractId)
+      alert('Contract terminated successfully')
+      fetchTenants() // Refresh tenant list
+      fetchAllRooms(hostels) // Refresh rooms
+    } catch (error) {
+      alert(error.response?.data?.message || 'Failed to terminate contract')
+    }
+  }
 
   const fetchAllRooms = async (hostelList) => {
     try {
@@ -301,8 +332,8 @@ export default function OwnerDashboard() {
                   <h3 className="text-3xl font-bold text-orange-500">{stats.pendingVerifications}</h3>
                 </div>
                 <div className="stats-card">
-                  <p className="text-text-muted text-sm mb-2">Tenant Requests</p>
-                  <h3 className="text-3xl font-bold text-blue-600">{stats.tenantRequests}</h3>
+                  <p className="text-text-muted text-sm mb-2">Active Tenants</p>
+                  <h3 className="text-3xl font-bold text-blue-600">{stats.activeTenants}</h3>
                 </div>
               </div>
 
@@ -849,34 +880,147 @@ export default function OwnerDashboard() {
           )}
 
           {activeTab === 'tenants' && (
-            <div className="card">
-              <h3 className="text-2xl font-bold mb-4 text-text-dark">Tenant Management</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-100">
-                    <tr>
-                      <th className="px-4 py-2 text-left">Request</th>
-                      <th className="px-4 py-2 text-left">Name</th>
-                      <th className="px-4 py-2 text-left">Hostel</th>
-                      <th className="px-4 py-2 text-left">Room Type</th>
-                      <th className="px-4 py-2 text-left">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tenantRequests.map((r) => (
-                      <tr className="border-b" key={r.id}>
-                        <td className="px-4 py-2">{r.id}</td>
-                        <td className="px-4 py-2">{r.name}</td>
-                        <td className="px-4 py-2">{r.hostel}</td>
-                        <td className="px-4 py-2">{r.roomType}</td>
-                        <td className="px-4 py-2 space-x-2">
-                          <button className="approve-btn">Approve</button>
-                          <button className="reject-btn">Reject</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            <div className="space-y-6">
+              <div className="card">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-2xl font-bold text-text-dark">Tenant Management</h3>
+                  <div className="flex items-center gap-4">
+                    <select
+                      value={selectedTenantHostel}
+                      onChange={(e) => setSelectedTenantHostel(e.target.value)}
+                      className="input"
+                    >
+                      <option value="all">All Hostels</option>
+                      {hostels.map((h) => (
+                        <option key={h._id} value={h._id}>{h.name}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      placeholder="Search by name or email..."
+                      value={tenantSearchQuery}
+                      onChange={(e) => setTenantSearchQuery(e.target.value)}
+                      className="input"
+                    />
+                  </div>
+                </div>
+
+                {tenantsLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="text-center">
+                      <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-primary mb-4"></div>
+                      <p className="text-text-muted">Loading tenants...</p>
+                    </div>
+                  </div>
+                ) : tenants.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="text-6xl mb-4">👥</div>
+                    <h3 className="text-xl font-bold text-text-dark mb-2">No Tenants Yet</h3>
+                    <p className="text-text-muted">You don't have any active tenants at the moment.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-100">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-sm font-semibold">Tenant</th>
+                          <th className="px-4 py-3 text-left text-sm font-semibold">Contact</th>
+                          <th className="px-4 py-3 text-left text-sm font-semibold">Hostel</th>
+                          <th className="px-4 py-3 text-left text-sm font-semibold">Room</th>
+                          <th className="px-4 py-3 text-left text-sm font-semibold">Status</th>
+                          <th className="px-4 py-3 text-left text-sm font-semibold">Rent</th>
+                          <th className="px-4 py-3 text-left text-sm font-semibold">Start Date</th>
+                          <th className="px-4 py-3 text-left text-sm font-semibold">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {tenants
+                          .filter(t => {
+                            if (selectedTenantHostel !== 'all' && t.hostel._id !== selectedTenantHostel) return false
+                            if (tenantSearchQuery && !(
+                              t.tenant?.name?.toLowerCase().includes(tenantSearchQuery.toLowerCase()) ||
+                              t.tenant?.email?.toLowerCase().includes(tenantSearchQuery.toLowerCase())
+                            )) return false
+                            return true
+                          })
+                          .map((contract) => (
+                          <tr className="border-b hover:bg-gray-50" key={contract._id}>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-primary text-white rounded-full flex items-center justify-center font-bold">
+                                  {contract.tenant?.name?.charAt(0).toUpperCase() || '?'}
+                                </div>
+                                <div>
+                                  <p className="font-semibold text-text-dark">{contract.tenant?.name || 'N/A'}</p>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <p className="text-sm text-text-muted">📧 {contract.tenant?.email || 'N/A'}</p>
+                              <p className="text-sm text-text-muted">📞 {contract.tenant?.phone || 'N/A'}</p>
+                            </td>
+                            <td className="px-4 py-3">
+                              <p className="font-medium text-text-dark">{contract.hostel?.name || 'N/A'}</p>
+                              <p className="text-xs text-text-muted">{contract.hostel?.address?.city}</p>
+                            </td>
+                            <td className="px-4 py-3">
+                              <p className="font-bold text-primary text-lg">{contract.room?.roomNumber || 'N/A'}</p>
+                              <p className="text-xs text-text-muted capitalize">{contract.room?.roomType} • Floor {contract.room?.floor}</p>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                                contract.status === 'active' ? 'bg-green-100 text-green-700' :
+                                contract.status === 'pending_signatures' ? 'bg-yellow-100 text-yellow-700' :
+                                'bg-gray-100 text-gray-700'
+                              }`}>
+                                {contract.status === 'active' ? '✓ Active' : 
+                                 contract.status === 'pending_signatures' ? '⏳ Pending' : 
+                                 contract.status}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <p className="font-bold text-accent">₹{contract.rent || 'N/A'}</p>
+                              <p className="text-xs text-text-muted">Deposit: ₹{contract.securityDeposit || 'N/A'}</p>
+                            </td>
+                            <td className="px-4 py-3">
+                              <p className="text-sm text-text-dark">
+                                {contract.startDate ? new Date(contract.startDate).toLocaleDateString('en-IN', { 
+                                  day: '2-digit', 
+                                  month: 'short', 
+                                  year: 'numeric' 
+                                }) : 'N/A'}
+                              </p>
+                            </td>
+                            <td className="px-4 py-3">
+                              <button
+                                onClick={() => handleTerminateTenant(contract._id)}
+                                className="bg-red-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-red-600 transition"
+                              >
+                                Terminate
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Summary Cards */}
+              <div className="grid md:grid-cols-3 gap-6">
+                <div className="stats-card">
+                  <p className="text-text-muted text-sm mb-2">Total Active Tenants</p>
+                  <h3 className="text-4xl font-bold text-primary">{tenants.filter(t => t.status === 'active').length}</h3>
+                </div>
+                <div className="stats-card">
+                  <p className="text-text-muted text-sm mb-2">Pending Contracts</p>
+                  <h3 className="text-4xl font-bold text-yellow-600">{tenants.filter(t => t.status === 'pending_signatures').length}</h3>
+                </div>
+                <div className="stats-card">
+                  <p className="text-text-muted text-sm mb-2">Monthly Revenue</p>
+                  <h3 className="text-4xl font-bold text-success">₹{tenants.filter(t => t.status === 'active').reduce((sum, t) => sum + (t.rent || 0), 0).toLocaleString()}</h3>
+                </div>
               </div>
             </div>
           )}

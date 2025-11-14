@@ -7,6 +7,8 @@ const {
   addExpense,
   submitFeedback,
   getMyContracts,
+  createBookingOrder,
+  bookRoom,
 } = require('../controllers/tenantController');
 const { protect } = require('../middleware/authMiddleware');
 const { authorize } = require('../middleware/roleMiddleware');
@@ -20,5 +22,7 @@ router.get('/expenses', getMyExpenses);
 router.post('/expenses', addExpense);
 router.post('/feedback', submitFeedback);
 router.get('/contracts', getMyContracts);
+router.post('/create-booking-order', createBookingOrder);
+router.post('/book-room', bookRoom);
 
 module.exports = router;
