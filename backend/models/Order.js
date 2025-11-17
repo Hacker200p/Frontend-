@@ -34,6 +34,12 @@ const orderSchema = new mongoose.Schema({
     default: 0,
   },
   deliveryAddress: {
+    hostel: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Hostel',
+    },
+    hostelName: String,
+    hostelAddress: String,
     roomNumber: String,
     floor: Number,
     notes: String,

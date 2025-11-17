@@ -11,14 +11,63 @@ const subscriptionSchema = new mongoose.Schema({
     ref: 'Canteen',
     required: true,
   },
+  deliveryLocation: {
+    hostel: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Hostel',
+    },
+    hostelName: String,
+    hostelAddress: String,
+    roomNumber: String,
+    floor: Number,
+  },
   plan: {
     type: String,
     enum: ['breakfast', 'lunch', 'dinner', 'breakfast_lunch', 'lunch_dinner', 'all_meals'],
     required: true,
   },
+  foodType: {
+    type: String,
+    enum: ['pure_veg', 'veg', 'non_veg_mix'],
+    required: true,
+    default: 'veg',
+  },
+  cuisinePreferences: [{
+    type: String,
+  }],
+  dishPreferences: {
+    breakfast: [{
+      dishName: String,
+      quantity: Number,
+    }],
+    lunch: [{
+      dishName: String,
+      quantity: Number,
+    }],
+    dinner: [{
+      dishName: String,
+      quantity: Number,
+    }],
+  },
+  spiceLevel: {
+    type: String,
+    enum: ['mild', 'medium', 'spicy'],
+    default: 'medium',
+  },
+  specialInstructions: String,
+  allergies: [{
+    type: String,
+  }],
   price: {
     type: Number,
     required: true,
+  },
+  duration: {
+    type: Number,
+    default: 1,  // months
+  },
+  totalAmount: {
+    type: Number,
   },
   startDate: {
     type: Date,

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
 import { LogOut, Menu, X } from 'lucide-react'
-import { tenantAPI } from '../../services/api'
+import { tenantAPI, canteenAPI } from '../../services/api'
 
 export default function TenantDashboard() {
   const navigate = useNavigate()
@@ -35,6 +35,25 @@ export default function TenantDashboard() {
   const [bookingLoading, setBookingLoading] = useState(false)
   const [bookingMessage, setBookingMessage] = useState('')
   const [myBooking, setMyBooking] = useState(null)
+  
+  // Canteen state
+  const [availableCanteens, setAvailableCanteens] = useState([])
+  const [selectedCanteen, setSelectedCanteen] = useState(null)
+  const [canteenMenu, setCanteenMenu] = useState([])
+  const [mySubscriptions, setMySubscriptions] = useState([])
+  const [menuCategory, setMenuCategory] = useState('all')
+  const [canteensLoading, setCanteensLoading] = useState(false)
+  const [canteenError, setCanteenError] = useState(null)
+  
+  // Subscription purchase state
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false)
+  const [selectedPlan, setSelectedPlan] = useState(null)
+  const [selectedFoodType, setSelectedFoodType] = useState('pure_veg')
+  const [subscriptionLoading, setSubscriptionLoading] = useState(false)
+  
+  // Contracts state
+  const [myContracts, setMyContracts] = useState([])
+  const [contractsLoading, setContractsLoading] = useState(false)
 
   useEffect(() => {
     // Check if user has any active contracts/bookings
@@ -102,6 +121,16 @@ export default function TenantDashboard() {
     
     return () => clearInterval(refreshInterval)
   }, [])
+
+  // Load data when switching tabs
+  useEffect(() => {
+    if (activeTab === 'canteen') {
+      fetchAvailableCanteens()
+      fetchMySubscriptions()
+    } else if (activeTab === 'contracts') {
+      fetchMyContracts()
+    }
+  }, [activeTab])
 
   const fetchHostelRooms = async (hostelId) => {
     try {
@@ -317,6 +346,197 @@ export default function TenantDashboard() {
   const handleLogout = () => {
     logout()
     navigate('/login')
+  }
+
+  const fetchAvailableCanteens = async () => {
+    setCanteensLoading(true)
+    setCanteenError(null)
+    try {
+      console.log('Fetching available canteens...')
+      const response = await canteenAPI.getAvailableCanteens()
+      console.log('Canteens response:', response.data)
+      setAvailableCanteens(response.data?.data || [])
+      
+      if (!response.data?.data || response.data.data.length === 0) {
+        const msg = response.data?.message || 'No canteens found. Make sure you have an active room booking.'
+        setCanteenError(msg)
+      }
+    } catch (error) {
+      console.error('Error fetching canteens:', error)
+      const errorMsg = error.response?.data?.message || error.message || 'Failed to load canteens'
+      setCanteenError(errorMsg)
+    } finally {
+      setCanteensLoading(false)
+    }
+  }
+
+  const fetchCanteenMenu = async (canteenId) => {
+    try {
+      const response = await canteenAPI.getCanteenMenu(canteenId)
+      setCanteenMenu(response.data?.data || [])
+    } catch (error) {
+      console.error('Error fetching menu:', error)
+    }
+  }
+
+  const fetchMySubscriptions = async () => {
+    try {
+      const response = await canteenAPI.getMySubscriptions()
+      setMySubscriptions(response.data?.data || [])
+    } catch (error) {
+      console.error('Error fetching subscriptions:', error)
+    }
+  }
+
+  const fetchMyContracts = async () => {
+    setContractsLoading(true)
+    try {
+      const response = await tenantAPI.getMyContracts()
+      setMyContracts(response.data?.data || [])
+    } catch (error) {
+      console.error('Error fetching contracts:', error)
+    } finally {
+      setContractsLoading(false)
+    }
+  }
+
+  const handleSubscribeClick = (planKey, plan) => {
+    setSelectedPlan({ key: planKey, data: plan })
+    setShowSubscriptionModal(true)
+  }
+
+  const handleSubscriptionPurchase = async () => {
+    if (!selectedCanteen || !selectedPlan || !selectedFoodType) {
+      alert('Please select all options')
+      return
+    }
+
+    const plan = selectedPlan.data
+    const price = plan[selectedFoodType]
+
+    if (!price || price <= 0) {
+      alert('This food type is not available for this plan')
+      return
+    }
+
+    try {
+      setSubscriptionLoading(true)
+
+      // Create subscription order
+      const orderResponse = await canteenAPI.createSubscriptionOrder({
+        canteen: selectedCanteen._id,
+        mealPlan: selectedPlan.key,
+        foodType: selectedFoodType,
+        amount: price,
+      })
+
+      const { razorpayOrderId, subscriptionOrderId } = orderResponse.data?.data
+
+      if (!razorpayOrderId || !subscriptionOrderId) {
+        throw new Error('Failed to create order - missing order IDs')
+      }
+
+      // Fetch Razorpay key from backend
+      const configResponse = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/payment-config`)
+      const configData = await configResponse.json()
+      const razorpayKeyId = configData.data?.razorpayKeyId
+
+      if (!razorpayKeyId) {
+        throw new Error('Payment configuration not available')
+      }
+      
+      // Check if Razorpay is available
+      if (!window.Razorpay) {
+        // Load Razorpay script dynamically
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script')
+          script.src = 'https://checkout.razorpay.com/v1/checkout.js'
+          script.onload = resolve
+          script.onerror = reject
+          document.body.appendChild(script)
+        })
+      }
+
+      if (!window.Razorpay) {
+        throw new Error('Failed to load Razorpay. Please check your internet connection.')
+      }
+
+      // Initialize Razorpay payment
+      const options = {
+        key: razorpayKeyId,
+        amount: price * 100, // Amount in paise
+        currency: 'INR',
+        name: 'SafeStay',
+        description: `${selectedPlan.key.replace('_', ' ')} - ${selectedFoodType.replace('_', ' ')} (${selectedCanteen.name})`,
+        order_id: razorpayOrderId,
+        prefill: {
+          name: user?.name || '',
+          email: user?.email || '',
+          contact: user?.phone || '',
+        },
+        theme: {
+          color: '#2563eb',
+        },
+        handler: async (response) => {
+          try {
+            console.log('Payment successful:', response)
+            
+            // Verify payment with backend
+            const verifyResponse = await canteenAPI.verifySubscriptionPayment({
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              subscriptionOrderId: subscriptionOrderId,
+            })
+
+            if (verifyResponse.data?.success) {
+              setSubscriptionLoading(false)
+              alert('✓ Subscription activated successfully! You will receive meals starting tomorrow.')
+              setShowSubscriptionModal(false)
+              setSelectedPlan(null)
+              setSelectedFoodType('pure_veg')
+              await fetchMySubscriptions()
+            } else {
+              throw new Error(verifyResponse.data?.message || 'Payment verification failed')
+            }
+          } catch (error) {
+            console.error('Payment verification error:', error)
+            setSubscriptionLoading(false)
+            const errorMsg = error.response?.data?.message || error.message || 'Unknown error'
+            alert('❌ Payment verification failed:\n\n' + errorMsg + '\n\nPlease contact support if the issue persists.')
+          }
+        },
+        modal: {
+          ondismiss: () => {
+            console.log('Payment modal closed')
+            setSubscriptionLoading(false)
+          }
+        },
+        onerror: (error) => {
+          console.error('Razorpay error:', error)
+          setSubscriptionLoading(false)
+          alert('Payment failed: ' + (error.description || 'Unknown error occurred'))
+        }
+      }
+
+      try {
+        const rzp = new window.Razorpay(options)
+        rzp.on('payment.failed', (response) => {
+          console.error('Payment failed:', response)
+          setSubscriptionLoading(false)
+          alert('Payment failed: ' + response.error.description)
+        })
+        rzp.open()
+      } catch (error) {
+        console.error('Error opening Razorpay:', error)
+        setSubscriptionLoading(false)
+        alert('Error opening payment gateway: ' + error.message)
+      }
+    } catch (error) {
+      console.error('Error in subscription purchase:', error)
+      setSubscriptionLoading(false)
+      alert('Failed to process subscription: ' + (error.response?.data?.message || error.message))
+    }
   }
 
   const menuItems = [
@@ -1218,16 +1438,531 @@ export default function TenantDashboard() {
           )}
 
           {activeTab === 'canteen' && (
-            <div className="card">
-              <h3 className="text-2xl font-bold mb-4 text-text-dark">Canteen & Food</h3>
-              <p className="text-text-muted">Coming soon...</p>
+            <div className="space-y-6">
+              {/* Booking Status Info */}
+              {myBooking && (
+                <div className="bg-gradient-to-r from-blue-50 to-purple-50 border-2 border-blue-200 rounded-xl p-4">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">🏠</span>
+                    <div className="flex-1">
+                      <div className="font-bold text-text-dark">Your Current Hostel: {myBooking.hostel?.name || 'Loading...'}</div>
+                      <div className="text-sm text-text-muted">
+                        Room {myBooking.room?.roomNumber} • Status: 
+                        <span className={`ml-1 px-2 py-0.5 rounded-full text-xs font-bold ${
+                          myBooking.status === 'active' ? 'bg-green-100 text-green-700' :
+                          myBooking.status === 'pending_signatures' ? 'bg-yellow-100 text-yellow-700' :
+                          'bg-blue-100 text-blue-700'
+                        }`}>
+                          {myBooking.status}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* My Active Subscriptions */}
+              {mySubscriptions.length > 0 && (
+                <div className="card">
+                  <h3 className="text-2xl font-bold mb-6 text-text-dark">🍱 My Active Subscriptions</h3>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    {mySubscriptions.filter(s => s.status === 'active').map(sub => (
+                      <div key={sub._id} className="border-2 border-primary rounded-xl p-4 bg-gradient-to-br from-blue-50 to-purple-50">
+                        <div className="flex items-start justify-between mb-3">
+                          <div>
+                            <h4 className="font-bold text-lg text-text-dark">{sub.canteen?.name}</h4>
+                            <p className="text-sm text-text-muted">{sub.canteen?.hostel?.name}</p>
+                          </div>
+                          <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">
+                            {sub.status}
+                          </span>
+                        </div>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex items-center justify-between">
+                            <span className="text-text-muted">Plan:</span>
+                            <span className="font-semibold text-primary capitalize">{sub.plan.replace('_', ' ')}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-text-muted">Food Type:</span>
+                            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                              sub.foodType === 'pure_veg' ? 'bg-green-100 text-green-700' :
+                              sub.foodType === 'veg' ? 'bg-lime-100 text-lime-700' :
+                              'bg-orange-100 text-orange-700'
+                            }`}>
+                              {sub.foodType === 'pure_veg' ? '🟢 Pure Veg' :
+                               sub.foodType === 'veg' ? '🥗 Veg' : '🍗 Non-Veg'}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-text-muted">Valid Until:</span>
+                            <span className="font-semibold text-text-dark">
+                              {new Date(sub.endDate).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-text-muted">Monthly Fee:</span>
+                            <span className="font-bold text-primary text-lg">₹{sub.price}</span>
+                          </div>
+                        </div>
+                        {sub.spiceLevel && (
+                          <div className="mt-3 pt-3 border-t">
+                            <div className="text-xs text-text-muted">Preferences:</div>
+                            <div className="flex gap-2 mt-1 flex-wrap">
+                              <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs">
+                                {sub.spiceLevel === 'mild' ? '😊 Mild' :
+                                 sub.spiceLevel === 'medium' ? '🌶️ Medium' :
+                                 sub.spiceLevel === 'hot' ? '🌶️🌶️ Hot' : '🌶️🌶️🌶️ Extra Hot'}
+                              </span>
+                              {sub.cuisinePreferences?.slice(0, 2).map((cuisine, idx) => (
+                                <span key={idx} className="px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs">
+                                  {cuisine}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    onClick={() => {
+                      fetchAvailableCanteens()
+                      fetchMySubscriptions()
+                    }}
+                    className="mt-4 btn-secondary"
+                  >
+                    Refresh Subscriptions
+                  </button>
+                </div>
+              )}
+
+              {/* Browse Canteens */}
+              <div className="card">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-2xl font-bold text-text-dark">🍽️ Available Canteens</h3>
+                  <button
+                    onClick={fetchAvailableCanteens}
+                    className="btn-secondary"
+                  >
+                    🔄 Refresh
+                  </button>
+                </div>
+
+                {canteensLoading ? (
+                  <div className="text-center py-12">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+                    <p className="text-text-muted">Loading canteens...</p>
+                  </div>
+                ) : canteenError ? (
+                  <div className="text-center py-12">
+                    <div className="text-6xl mb-4">🍽️</div>
+                    <p className="text-red-600 text-lg mb-2">{canteenError}</p>
+                    <p className="text-text-muted text-sm mb-4">
+                      {!hasActiveBooking && 'Please book a room first to see available canteens.'}
+                    </p>
+                    <button onClick={fetchAvailableCanteens} className="btn-primary">
+                      🔄 Retry
+                    </button>
+                  </div>
+                ) : availableCanteens.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="text-6xl mb-4">🍽️</div>
+                    <p className="text-text-muted text-lg mb-4">No canteens available in your hostel yet</p>
+                    {!hasActiveBooking && (
+                      <p className="text-yellow-600 text-sm mb-4">⚠️ You need an active room booking to view canteens</p>
+                    )}
+                    <button onClick={fetchAvailableCanteens} className="btn-primary" disabled={canteensLoading}>
+                      {canteensLoading ? 'Loading...' : 'Load Canteens'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {availableCanteens.map(canteen => (
+                      <div key={canteen._id} className="border-2 border-gray-200 rounded-xl p-4 hover:border-primary transition cursor-pointer"
+                        onClick={() => {
+                          setSelectedCanteen(canteen)
+                          fetchCanteenMenu(canteen._id)
+                        }}>
+                        <h4 className="font-bold text-lg text-text-dark mb-2">{canteen.name}</h4>
+                        <p className="text-sm text-text-muted mb-3">{canteen.description}</p>
+                        <div className="flex flex-wrap gap-1 mb-3">
+                          {canteen.cuisineTypes?.slice(0, 3).map((cuisine, idx) => (
+                            <span key={idx} className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded text-xs">
+                              {cuisine}
+                            </span>
+                          ))}
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-text-muted">Delivery: ₹{canteen.deliveryCharge || 0}</span>
+                          <span className="text-primary font-semibold">View Menu →</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Selected Canteen Menu */}
+              {selectedCanteen && (
+                <div className="card">
+                  <div className="flex items-center justify-between mb-6">
+                    <div>
+                      <h3 className="text-2xl font-bold text-text-dark">{selectedCanteen.name} - Menu</h3>
+                      <p className="text-sm text-text-muted">{selectedCanteen.hostel?.name}</p>
+                    </div>
+                    <button
+                      onClick={() => setSelectedCanteen(null)}
+                      className="text-text-muted hover:text-text-dark"
+                    >
+                      <X className="w-6 h-6" />
+                    </button>
+                  </div>
+
+                  {/* Category Filter */}
+                  <div className="flex gap-2 mb-6 flex-wrap">
+                    {['all', 'breakfast', 'lunch', 'dinner', 'snacks', 'beverages'].map(cat => (
+                      <button
+                        key={cat}
+                        onClick={() => setMenuCategory(cat)}
+                        className={`px-4 py-2 rounded-lg font-semibold capitalize transition ${
+                          menuCategory === cat
+                            ? 'bg-primary text-white'
+                            : 'bg-gray-100 text-text-dark hover:bg-gray-200'
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Menu Items Grid */}
+                  <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {canteenMenu
+                      .filter(item => menuCategory === 'all' || item.category === menuCategory)
+                      .filter(item => item.isAvailable)
+                      .map(item => (
+                        <div key={item._id} className="border rounded-lg overflow-hidden hover:shadow-lg transition">
+                          {item.image?.url ? (
+                            <img src={item.image.url} alt={item.name} className="w-full h-40 object-cover" />
+                          ) : (
+                            <div className="w-full h-40 bg-gradient-to-br from-purple-100 to-blue-100 flex items-center justify-center text-6xl">
+                              🍽️
+                            </div>
+                          )}
+                          <div className="p-4">
+                            <div className="flex items-start justify-between mb-2">
+                              <h4 className="font-bold text-text-dark">{item.name}</h4>
+                              <span className={`px-2 py-0.5 rounded text-xs font-semibold ${
+                                item.foodType === 'veg' ? 'bg-green-100 text-green-700' :
+                                item.foodType === 'non-veg' ? 'bg-red-100 text-red-700' :
+                                'bg-blue-100 text-blue-700'
+                              }`}>
+                                {item.foodType}
+                              </span>
+                            </div>
+                            <p className="text-sm text-text-muted mb-3">{item.description}</p>
+                            <div className="flex items-center justify-between">
+                              <span className="text-2xl font-bold text-primary">₹{item.price}</span>
+                              <span className="text-xs text-text-muted">⏱️ {item.preparationTime || 20} min</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+
+                  {canteenMenu.filter(item => menuCategory === 'all' || item.category === menuCategory).length === 0 && (
+                    <div className="text-center py-12">
+                      <p className="text-text-muted">No items available in this category</p>
+                    </div>
+                  )}
+
+                  {/* Subscription Plans */}
+                  {selectedCanteen.subscriptionPlans && (
+                    <div className="mt-8 pt-8 border-t">
+                      <h4 className="text-xl font-bold text-text-dark mb-4">📅 Monthly Subscription Plans</h4>
+                      <div className="grid md:grid-cols-2 gap-4">
+                        {Object.entries(selectedCanteen.subscriptionPlans)
+                          .filter(([key, plan]) => plan.enabled)
+                          .map(([key, plan]) => (
+                            <div key={key} className="border-2 border-primary rounded-xl p-4 bg-gradient-to-br from-green-50 to-blue-50">
+                              <h5 className="font-bold text-lg text-primary capitalize mb-3">{key.replace('_', ' ')}</h5>
+                              <div className="space-y-2">
+                                {plan.pure_veg > 0 && (
+                                  <div className="flex justify-between">
+                                    <span className="text-sm">🟢 Pure Veg</span>
+                                    <span className="font-bold text-green-700">₹{plan.pure_veg}/month</span>
+                                  </div>
+                                )}
+                                {plan.veg > 0 && (
+                                  <div className="flex justify-between">
+                                    <span className="text-sm">🥗 Veg</span>
+                                    <span className="font-bold text-lime-700">₹{plan.veg}/month</span>
+                                  </div>
+                                )}
+                                {plan.non_veg_mix > 0 && (
+                                  <div className="flex justify-between">
+                                    <span className="text-sm">🍗 Non-Veg Mix</span>
+                                    <span className="font-bold text-orange-700">₹{plan.non_veg_mix}/month</span>
+                                  </div>
+                                )}
+                              </div>
+                              <button 
+                                onClick={() => handleSubscribeClick(key, plan)}
+                                className="w-full mt-4 btn-primary text-sm hover:shadow-lg transition"
+                                disabled={!plan.enabled}
+                              >
+                                Subscribe Now
+                              </button>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
           {activeTab === 'contracts' && (
-            <div className="card">
-              <h3 className="text-2xl font-bold mb-4 text-text-dark">My Contracts</h3>
-              <p className="text-text-muted">Coming soon...</p>
+            <div className="space-y-6">
+              <div className="card">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-2xl font-bold text-text-dark">📄 My Rental Contracts</h3>
+                  <button
+                    onClick={fetchMyContracts}
+                    className="btn-secondary"
+                    disabled={contractsLoading}
+                  >
+                    {contractsLoading ? 'Loading...' : '🔄 Refresh'}
+                  </button>
+                </div>
+
+                {contractsLoading ? (
+                  <div className="text-center py-12">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+                    <p className="text-text-muted mt-4">Loading contracts...</p>
+                  </div>
+                ) : myContracts.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="text-6xl mb-4">📋</div>
+                    <p className="text-text-muted text-lg mb-4">No contracts found</p>
+                    <button onClick={fetchMyContracts} className="btn-primary">
+                      Load My Contracts
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Statistics */}
+                    <div className="grid md:grid-cols-4 gap-4 mb-6">
+                      <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4 border-2 border-green-200">
+                        <div className="text-green-600 text-2xl mb-2">✅</div>
+                        <div className="text-2xl font-bold text-green-700">
+                          {myContracts.filter(c => c.status === 'active').length}
+                        </div>
+                        <div className="text-xs text-green-600 font-medium">Active</div>
+                      </div>
+                      <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-xl p-4 border-2 border-yellow-200">
+                        <div className="text-yellow-600 text-2xl mb-2">⏳</div>
+                        <div className="text-2xl font-bold text-yellow-700">
+                          {myContracts.filter(c => c.status === 'pending_signatures').length}
+                        </div>
+                        <div className="text-xs text-yellow-600 font-medium">Pending</div>
+                      </div>
+                      <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 border-2 border-blue-200">
+                        <div className="text-blue-600 text-2xl mb-2">📝</div>
+                        <div className="text-2xl font-bold text-blue-700">
+                          {myContracts.filter(c => c.status === 'draft').length}
+                        </div>
+                        <div className="text-xs text-blue-600 font-medium">Draft</div>
+                      </div>
+                      <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-4 border-2 border-gray-200">
+                        <div className="text-gray-600 text-2xl mb-2">🏁</div>
+                        <div className="text-2xl font-bold text-gray-700">
+                          {myContracts.filter(c => c.status === 'completed' || c.status === 'terminated').length}
+                        </div>
+                        <div className="text-xs text-gray-600 font-medium">Ended</div>
+                      </div>
+                    </div>
+
+                    {/* Contracts List */}
+                    {myContracts.map(contract => (
+                      <div key={contract._id} className={`border-2 rounded-xl overflow-hidden ${
+                        contract.status === 'active' ? 'border-green-300 bg-green-50' :
+                        contract.status === 'pending_signatures' ? 'border-yellow-300 bg-yellow-50' :
+                        contract.status === 'draft' ? 'border-blue-300 bg-blue-50' :
+                        'border-gray-300 bg-gray-50'
+                      }`}>
+                        {/* Contract Header */}
+                        <div className={`p-4 ${
+                          contract.status === 'active' ? 'bg-green-100' :
+                          contract.status === 'pending_signatures' ? 'bg-yellow-100' :
+                          contract.status === 'draft' ? 'bg-blue-100' :
+                          'bg-gray-100'
+                        }`}>
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <h4 className="font-bold text-xl text-text-dark mb-1">
+                                {contract.hostel?.name || 'Hostel Name'}
+                              </h4>
+                              <p className="text-sm text-text-muted">
+                                📍 {contract.hostel?.address}, {contract.hostel?.city}
+                              </p>
+                            </div>
+                            <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                              contract.status === 'active' ? 'bg-green-200 text-green-800' :
+                              contract.status === 'pending_signatures' ? 'bg-yellow-200 text-yellow-800' :
+                              contract.status === 'draft' ? 'bg-blue-200 text-blue-800' :
+                              'bg-gray-200 text-gray-800'
+                            }`}>
+                              {contract.status.replace('_', ' ').toUpperCase()}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Contract Details */}
+                        <div className="p-4 bg-white">
+                          <div className="grid md:grid-cols-2 gap-6">
+                            {/* Room Details */}
+                            <div>
+                              <h5 className="font-semibold text-text-dark mb-3 flex items-center gap-2">
+                                <span className="text-xl">🚪</span> Room Details
+                              </h5>
+                              <div className="space-y-2 text-sm">
+                                <div className="flex justify-between">
+                                  <span className="text-text-muted">Room Number:</span>
+                                  <span className="font-semibold text-text-dark">{contract.room?.roomNumber || 'N/A'}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-text-muted">Floor:</span>
+                                  <span className="font-semibold text-text-dark">{contract.room?.floor || 'N/A'}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-text-muted">Type:</span>
+                                  <span className="font-semibold text-text-dark capitalize">{contract.room?.type || 'N/A'}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-text-muted">Capacity:</span>
+                                  <span className="font-semibold text-text-dark">{contract.room?.capacity || 'N/A'} persons</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Contract Duration */}
+                            <div>
+                              <h5 className="font-semibold text-text-dark mb-3 flex items-center gap-2">
+                                <span className="text-xl">📅</span> Duration
+                              </h5>
+                              <div className="space-y-2 text-sm">
+                                <div className="flex justify-between">
+                                  <span className="text-text-muted">Start Date:</span>
+                                  <span className="font-semibold text-text-dark">
+                                    {new Date(contract.startDate).toLocaleDateString()}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-text-muted">End Date:</span>
+                                  <span className="font-semibold text-text-dark">
+                                    {new Date(contract.endDate).toLocaleDateString()}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-text-muted">Duration:</span>
+                                  <span className="font-semibold text-primary">
+                                    {Math.ceil((new Date(contract.endDate) - new Date(contract.startDate)) / (1000 * 60 * 60 * 24))} days
+                                  </span>
+                                </div>
+                                {contract.status === 'active' && (
+                                  <div className="flex justify-between">
+                                    <span className="text-text-muted">Days Remaining:</span>
+                                    <span className="font-semibold text-green-700">
+                                      {Math.max(0, Math.ceil((new Date(contract.endDate) - new Date()) / (1000 * 60 * 60 * 24)))} days
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Financial Details */}
+                            <div>
+                              <h5 className="font-semibold text-text-dark mb-3 flex items-center gap-2">
+                                <span className="text-xl">💰</span> Financial
+                              </h5>
+                              <div className="space-y-2 text-sm">
+                                <div className="flex justify-between">
+                                  <span className="text-text-muted">Monthly Rent:</span>
+                                  <span className="font-bold text-primary text-lg">₹{contract.monthlyRent || 0}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-text-muted">Security Deposit:</span>
+                                  <span className="font-semibold text-text-dark">₹{contract.securityDeposit || 0}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-text-muted">Payment Status:</span>
+                                  <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                                    contract.paymentStatus === 'paid' ? 'bg-green-100 text-green-700' :
+                                    contract.paymentStatus === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                                    'bg-red-100 text-red-700'
+                                  }`}>
+                                    {contract.paymentStatus || 'pending'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Owner Details */}
+                            <div>
+                              <h5 className="font-semibold text-text-dark mb-3 flex items-center gap-2">
+                                <span className="text-xl">👤</span> Owner
+                              </h5>
+                              <div className="space-y-2 text-sm">
+                                <div className="flex justify-between">
+                                  <span className="text-text-muted">Name:</span>
+                                  <span className="font-semibold text-text-dark">{contract.owner?.name || 'N/A'}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-text-muted">Phone:</span>
+                                  <span className="font-semibold text-text-dark">{contract.owner?.phone || 'N/A'}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                  <span className="text-text-muted">Email:</span>
+                                  <span className="font-semibold text-text-dark text-xs">{contract.owner?.email || 'N/A'}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Terms and Conditions */}
+                          {contract.terms && contract.terms.length > 0 && (
+                            <div className="mt-6 pt-6 border-t">
+                              <h5 className="font-semibold text-text-dark mb-3">📋 Terms & Conditions</h5>
+                              <ul className="space-y-1 text-sm text-text-muted">
+                                {contract.terms.map((term, idx) => (
+                                  <li key={idx} className="flex items-start gap-2">
+                                    <span className="text-primary mt-1">•</span>
+                                    <span>{term}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {/* Actions */}
+                          {contract.status === 'active' && (
+                            <div className="mt-6 pt-6 border-t flex gap-3">
+                              <button className="btn-primary flex-1">
+                                📄 View Full Contract
+                              </button>
+                              <button className="btn-secondary flex-1">
+                                📞 Contact Owner
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -1436,6 +2171,7 @@ export default function TenantDashboard() {
                   </button>
                 </div>
 
+
                 <p className="text-xs text-gray-500 text-center mt-3">
                   By booking, you agree to the terms and conditions. The owner will review your request and contact you.
                 </p>
@@ -1444,6 +2180,241 @@ export default function TenantDashboard() {
           </div>
         </div>
       )}
+
+      {/* Subscription Modal */}
+      {showSubscriptionModal && selectedPlan && selectedCanteen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-8 shadow-2xl transform transition-all">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h3 className="text-3xl font-bold text-text-dark">
+                  🍱 Subscribe Now
+                </h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  Get fresh meals delivered to your room
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowSubscriptionModal(false)
+                  setSelectedPlan(null)
+                }}
+                className="text-gray-400 hover:text-gray-600 transition text-2xl font-light"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-6">
+              {/* Left Side - Canteen & Plan Info */}
+              <div>
+                {/* Canteen Card */}
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl p-5 mb-6 border border-blue-100">
+                  <div className="flex items-start gap-4">
+                    <div className="w-16 h-16 bg-white rounded-xl flex items-center justify-center text-2xl shadow-sm">
+                      🍽️
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="font-bold text-lg text-text-dark">{selectedCanteen.name}</h4>
+                      <p className="text-sm text-gray-600 mt-1">{selectedCanteen.description?.substring(0, 50)}...</p>
+                      <div className="flex gap-2 mt-3">
+                        {selectedCanteen.cuisineTypes?.slice(0, 2).map(cuisine => (
+                          <span key={cuisine} className="text-xs bg-white px-2 py-1 rounded-full text-gray-700">
+                            {cuisine}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Plan Card */}
+                <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-2xl p-5 border border-green-100">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 bg-green-200 rounded-lg flex items-center justify-center">
+                      📅
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-600 font-medium">Selected Plan</p>
+                      <p className="font-bold text-lg text-text-dark capitalize">
+                        {selectedPlan.key.replace('_', ' ')}
+                      </p>
+                    </div>
+                  </div>
+                  {selectedPlan.data.weeklyMenu && Object.values(selectedPlan.data.weeklyMenu).filter(Boolean).length > 0 && (
+                    <p className="text-xs text-green-700 bg-white rounded-lg px-3 py-2 inline-block">
+                      ✓ Weekly menu available
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Right Side - Food Type Selection */}
+              <div>
+                <label className="block text-sm font-bold text-text-dark mb-4">
+                  Choose Your Food Type 🥘
+                </label>
+                <div className="space-y-3">
+                  {selectedPlan.data.pure_veg > 0 && (
+                    <label className="flex items-center p-4 border-2 rounded-2xl cursor-pointer transition-all"
+                      style={{
+                        borderColor: selectedFoodType === 'pure_veg' ? '#2563eb' : '#e5e7eb',
+                        backgroundColor: selectedFoodType === 'pure_veg' ? '#eff6ff' : 'white'
+                      }}
+                    >
+                      <div className="flex-shrink-0">
+                        <input
+                          type="radio"
+                          name="foodType"
+                          value="pure_veg"
+                          checked={selectedFoodType === 'pure_veg'}
+                          onChange={(e) => setSelectedFoodType(e.target.value)}
+                          className="w-5 h-5 text-primary"
+                        />
+                      </div>
+                      <div className="ml-4 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xl">🟢</span>
+                          <span className="font-bold text-gray-900">Pure Vegetarian</span>
+                        </div>
+                        <p className="text-xs text-gray-600 mt-1">100% vegan & vegetarian meals</p>
+                      </div>
+                      <span className="text-lg font-bold text-primary">
+                        ₹{selectedPlan.data.pure_veg}
+                      </span>
+                    </label>
+                  )}
+                  {selectedPlan.data.veg > 0 && (
+                    <label className="flex items-center p-4 border-2 rounded-2xl cursor-pointer transition-all"
+                      style={{
+                        borderColor: selectedFoodType === 'veg' ? '#2563eb' : '#e5e7eb',
+                        backgroundColor: selectedFoodType === 'veg' ? '#eff6ff' : 'white'
+                      }}
+                    >
+                      <div className="flex-shrink-0">
+                        <input
+                          type="radio"
+                          name="foodType"
+                          value="veg"
+                          checked={selectedFoodType === 'veg'}
+                          onChange={(e) => setSelectedFoodType(e.target.value)}
+                          className="w-5 h-5 text-primary"
+                        />
+                      </div>
+                      <div className="ml-4 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xl">🥗</span>
+                          <span className="font-bold text-gray-900">Vegetarian</span>
+                        </div>
+                        <p className="text-xs text-gray-600 mt-1">Vegetables with dairy products</p>
+                      </div>
+                      <span className="text-lg font-bold text-primary">
+                        ₹{selectedPlan.data.veg}
+                      </span>
+                    </label>
+                  )}
+                  {selectedPlan.data.non_veg_mix > 0 && (
+                    <label className="flex items-center p-4 border-2 rounded-2xl cursor-pointer transition-all"
+                      style={{
+                        borderColor: selectedFoodType === 'non_veg_mix' ? '#2563eb' : '#e5e7eb',
+                        backgroundColor: selectedFoodType === 'non_veg_mix' ? '#eff6ff' : 'white'
+                      }}
+                    >
+                      <div className="flex-shrink-0">
+                        <input
+                          type="radio"
+                          name="foodType"
+                          value="non_veg_mix"
+                          checked={selectedFoodType === 'non_veg_mix'}
+                          onChange={(e) => setSelectedFoodType(e.target.value)}
+                          className="w-5 h-5 text-primary"
+                        />
+                      </div>
+                      <div className="ml-4 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xl">🍗</span>
+                          <span className="font-bold text-gray-900">Non-Veg Mix</span>
+                        </div>
+                        <p className="text-xs text-gray-600 mt-1">Mix of vegetables & non-veg items</p>
+                      </div>
+                      <span className="text-lg font-bold text-primary">
+                        ₹{selectedPlan.data.non_veg_mix}
+                      </span>
+                    </label>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Price Summary */}
+            <div className="mt-8 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-2xl p-6 border border-blue-100">
+              <div className="grid grid-cols-3 gap-4 text-center mb-4 pb-4 border-b border-blue-200">
+                <div>
+                  <p className="text-xs text-gray-600 font-medium">CANTEEN</p>
+                  <p className="font-bold text-gray-900 truncate">{selectedCanteen.name}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-600 font-medium">PLAN</p>
+                  <p className="font-bold text-gray-900 capitalize">
+                    {selectedPlan.key.replace('_', ' ')}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-gray-600 font-medium">DURATION</p>
+                  <p className="font-bold text-gray-900">1 Month</p>
+                </div>
+              </div>
+              <div className="flex justify-between items-center">
+                <div>
+                  <p className="text-sm text-gray-600 font-medium">MONTHLY AMOUNT</p>
+                  <p className="text-2xl font-bold text-primary mt-1">
+                    ₹{selectedPlan.data[selectedFoodType]}/month
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-gray-600">Auto-renews every month</p>
+                  <p className="text-sm text-green-600 font-bold mt-1">✓ Flexible cancellation</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3 mt-8">
+              <button
+                onClick={() => {
+                  setShowSubscriptionModal(false)
+                  setSelectedPlan(null)
+                }}
+                className="flex-1 px-6 py-3 rounded-xl border-2 border-gray-300 font-bold text-gray-700 hover:border-gray-400 hover:bg-gray-50 transition"
+                disabled={subscriptionLoading}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSubscriptionPurchase}
+                className="flex-1 px-6 py-3 rounded-xl bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold hover:shadow-lg transition disabled:opacity-50"
+                disabled={subscriptionLoading}
+              >
+                {subscriptionLoading ? (
+                  <>
+                    <span className="inline-block animate-spin mr-2">⟳</span>
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    💳 Pay ₹{selectedPlan.data[selectedFoodType]}
+                  </>
+                )}
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-500 text-center mt-4">
+              🔒 Secure payment via Razorpay | You can cancel anytime
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
+

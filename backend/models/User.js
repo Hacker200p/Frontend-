@@ -85,6 +85,14 @@ const userSchema = new mongoose.Schema({
     pan: String,
     businessLicense: String,
   },
+  refreshToken: {
+    type: String,
+    select: false,
+  },
+  refreshTokenExpiry: {
+    type: Date,
+    select: false,
+  },
   createdAt: {
     type: Date,
     default: Date.now,

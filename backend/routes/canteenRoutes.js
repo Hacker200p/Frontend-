@@ -20,6 +20,7 @@ const {
   getMySubscriptions,
   getCanteenSubscriptions,
   cancelSubscription,
+  getAvailableCanteens,
 } = require('../controllers/canteenController');
 const { protect } = require('../middleware/authMiddleware');
 const { authorize } = require('../middleware/roleMiddleware');
@@ -28,17 +29,18 @@ const upload = require('../middleware/uploadMiddleware');
 // Provider routes
 router.post('/', protect, authorize('canteen_provider'), createCanteen);
 router.get('/my-canteens', protect, authorize('canteen_provider'), getMyCanteens);
-router.get('/available-hostels', protect, authorize('canteen_provider'), getAvailableHostels);
-router.delete('/:id', protect, authorize('canteen_provider'), deleteCanteen);
+router.get('/available-hostels', protect, authorize('canteen_provider', 'owner'), getAvailableHostels);
 router.put('/:id/subscription-plans', protect, authorize('canteen_provider'), updateSubscriptionPlans);
 router.get('/:id/subscriptions', protect, authorize('canteen_provider'), getCanteenSubscriptions);
 router.post('/:id/menu', protect, authorize('canteen_provider'), upload.single('image'), addMenuItem);
 router.put('/menu/:id', protect, authorize('canteen_provider'), upload.single('image'), updateMenuItem);
 router.delete('/menu/:id', protect, authorize('canteen_provider'), deleteMenuItem);
+router.delete('/:id', protect, authorize('canteen_provider'), deleteCanteen);
 router.get('/orders', protect, authorize('canteen_provider'), getProviderOrders);
 router.put('/orders/:id/status', protect, authorize('canteen_provider'), updateOrderStatus);
 
 // Public/Tenant routes
+router.get('/available', protect, authorize('tenant'), getAvailableCanteens);
 router.get('/:id/menu', getCanteenMenu);
 router.post('/orders', protect, authorize('tenant'), createOrder);
 router.post('/orders/verify-payment', protect, authorize('tenant'), verifyPayment);

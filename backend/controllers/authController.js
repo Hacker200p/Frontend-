@@ -275,6 +275,13 @@ const login = async (req, res) => {
       return res.status(401).json({ success: false, message: 'Account is deactivated' });
     }
 
+    const { accessToken, refreshToken } = generateToken(user._id);
+
+    // Save refresh token to database
+    user.refreshToken = refreshToken;
+    user.refreshTokenExpiry = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+    await user.save();
+
     res.json({
       success: true,
       data: {
@@ -283,7 +290,8 @@ const login = async (req, res) => {
         email: user.email,
         phone: user.phone,
         role: user.role,
-        token: generateToken(user._id),
+        token: accessToken,
+        refreshToken: refreshToken,
       },
     });
   } catch (error) {
@@ -324,4 +332,55 @@ const updateProfile = async (req, res) => {
   }
 };
 
-module.exports = { register, login, getMe, updateProfile, verifyOTP, resendOTP };
+// @desc    Refresh access token
+// @route   POST /api/auth/refresh-token
+// @access  Public
+const refreshTokenController = async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(401).json({ success: false, message: 'Refresh token is required' });
+    }
+
+    const jwt = require('jsonwebtoken');
+    let decoded;
+    
+    try {
+      decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+    } catch (error) {
+      return res.status(401).json({ success: false, message: 'Invalid or expired refresh token' });
+    }
+
+    // Find user and verify refresh token matches
+    const user = await User.findById(decoded.id).select('+refreshToken +refreshTokenExpiry');
+
+    if (!user || user.refreshToken !== refreshToken) {
+      return res.status(401).json({ success: false, message: 'Refresh token mismatch or user not found' });
+    }
+
+    if (user.refreshTokenExpiry < new Date()) {
+      return res.status(401).json({ success: false, message: 'Refresh token has expired' });
+    }
+
+    if (!user.isActive) {
+      return res.status(401).json({ success: false, message: 'Account is deactivated' });
+    }
+
+    // Generate new access token
+    const newAccessToken = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+      expiresIn: '15m',
+    });
+
+    res.json({
+      success: true,
+      data: {
+        token: newAccessToken,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+module.exports = { register, login, getMe, updateProfile, verifyOTP, resendOTP, refreshTokenController };
