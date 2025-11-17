@@ -36,6 +36,12 @@ export default function CanteenDashboard() {
   })
   const [subscriptions, setSubscriptions] = useState([])
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false)
+  const [orders, setOrders] = useState([])
+  const [ordersLoading, setOrdersLoading] = useState(false)
+  const [orderStatusFilter, setOrderStatusFilter] = useState('all')
+  const [selectedOrder, setSelectedOrder] = useState(null)
+  const [feedbacks, setFeedbacks] = useState([])
+  const [feedbacksLoading, setFeedbacksLoading] = useState(false)
   const [subscriptionPlans, setSubscriptionPlans] = useState({
     breakfast: { enabled: false, price: 0 },
     lunch: { enabled: false, price: 0 },
@@ -75,6 +81,14 @@ export default function CanteenDashboard() {
       }
     }
   }, [selectedCanteen])
+
+  useEffect(() => {
+    if (activeTab === 'orders') {
+      fetchOrders()
+    } else if (activeTab === 'feedback') {
+      fetchFeedbacks()
+    }
+  }, [activeTab])
 
   const fetchHostels = async () => {
     try {
@@ -119,6 +133,54 @@ export default function CanteenDashboard() {
       setSubscriptions(response.data?.data || [])
     } catch (error) {
       console.error('Error fetching subscriptions:', error)
+    }
+  }
+
+  const fetchOrders = async () => {
+    try {
+      setOrdersLoading(true)
+      const response = await canteenAPI.getProviderOrders()
+      console.log('📦 Provider orders fetched:', response.data?.data)
+      // Filter out cancelled orders
+      const filteredOrders = (response.data?.data || []).filter(order => order.orderStatus !== 'cancelled')
+      setOrders(filteredOrders)
+    } catch (error) {
+      console.error('Error fetching orders:', error)
+      setOrders([])
+    } finally {
+      setOrdersLoading(false)
+    }
+  }
+
+  const fetchFeedbacks = async () => {
+    try {
+      setFeedbacksLoading(true)
+      // Fetch feedbacks from backend
+      const response = await canteenAPI.getProviderFeedbacks()
+      setFeedbacks(response.data?.data || [])
+    } catch (error) {
+      console.error('Error fetching feedbacks:', error)
+      setFeedbacks([])
+    } finally {
+      setFeedbacksLoading(false)
+    }
+  }
+
+  const handleUpdateOrderStatus = async (orderId, newStatus) => {
+    try {
+      setOrdersLoading(true)
+      await canteenAPI.updateOrderStatus(orderId, { status: newStatus })
+      // Refresh orders
+      await fetchOrders()
+      const successDiv = document.createElement('div')
+      successDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-4 rounded-lg shadow-lg z-50 flex items-center gap-3'
+      successDiv.innerHTML = `✓ Order ${newStatus}!`
+      document.body.appendChild(successDiv)
+      setTimeout(() => successDiv.remove(), 3000)
+    } catch (error) {
+      alert(error.response?.data?.message || 'Failed to update order status')
+    } finally {
+      setOrdersLoading(false)
     }
   }
 
@@ -591,32 +653,184 @@ export default function CanteenDashboard() {
 
           {activeTab === 'orders' && (
             <div className="card">
-              <h3 className="text-2xl font-bold mb-4 text-text-dark">Orders</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-100">
-                    <tr>
-                      <th className="px-4 py-2 text-left">Order ID</th>
-                      <th className="px-4 py-2 text-left">Tenant</th>
-                      <th className="px-4 py-2 text-left">Items</th>
-                      <th className="px-4 py-2 text-left">Status</th>
-                      <th className="px-4 py-2 text-left">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="border-b">
-                      <td className="px-4 py-2">ORD001</td>
-                      <td className="px-4 py-2">John Doe</td>
-                      <td className="px-4 py-2">2x Biryani</td>
-                      <td className="px-4 py-2"><span className="bg-yellow-100 px-2 py-1 rounded text-yellow-800">Pending</span></td>
-                      <td className="px-4 py-2 space-x-2">
-                        <button className="approve-btn">Accept</button>
-                        <button className="reject-btn">Reject</button>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-2xl font-bold text-text-dark">Orders Management</h3>
+                <select
+                  value={orderStatusFilter}
+                  onChange={(e) => setOrderStatusFilter(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                >
+                  <option value="all">All Orders</option>
+                  <option value="pending">Pending</option>
+                  <option value="confirmed">Confirmed</option>
+                  <option value="preparing">Preparing</option>
+                  <option value="ready">Ready</option>
+                  <option value="delivered">Delivered</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
               </div>
+
+              {ordersLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                  <span className="ml-2 text-text-muted">Loading orders...</span>
+                </div>
+              ) : orders.length === 0 ? (
+                <div className="text-center py-8 text-text-muted">
+                  <p>No orders yet</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {(orderStatusFilter === 'all' 
+                    ? orders 
+                    : orders.filter(o => o.orderStatus === orderStatusFilter)
+                  ).map(order => (
+                    <div
+                      key={order._id}
+                      className={`border-2 rounded-lg p-4 ${
+                        order.orderStatus === 'pending' ? 'border-yellow-300 bg-yellow-50' :
+                        order.orderStatus === 'confirmed' ? 'border-blue-300 bg-blue-50' :
+                        order.orderStatus === 'preparing' ? 'border-orange-300 bg-orange-50' :
+                        order.orderStatus === 'ready' ? 'border-green-300 bg-green-50' :
+                        order.orderStatus === 'delivered' ? 'border-green-500 bg-green-100' :
+                        'border-red-300 bg-red-50'
+                      }`}
+                    >
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+                        <div>
+                          <p className="text-sm text-text-muted font-semibold">Order #</p>
+                          <p className="font-bold text-text-dark">{order.orderNumber}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-text-muted font-semibold">Status</p>
+                          <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                            order.orderStatus === 'pending' ? 'bg-yellow-200 text-yellow-800' :
+                            order.orderStatus === 'confirmed' ? 'bg-blue-200 text-blue-800' :
+                            order.orderStatus === 'preparing' ? 'bg-orange-200 text-orange-800' :
+                            order.orderStatus === 'ready' ? 'bg-green-200 text-green-800' :
+                            order.orderStatus === 'delivered' ? 'bg-green-300 text-green-800' :
+                            'bg-red-200 text-red-800'
+                          }`}>
+                            {order.orderStatus.charAt(0).toUpperCase() + order.orderStatus.slice(1)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3 pb-3 border-b">
+                        <div>
+                          <p className="text-sm text-text-muted font-semibold">👤 Tenant Name</p>
+                          <p className="font-semibold text-text-dark">{order.tenant?.name}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-text-muted font-semibold">📞 Phone</p>
+                          <p className="font-semibold text-text-dark">{order.tenant?.phone}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-text-muted font-semibold">📧 Email</p>
+                          <p className="font-semibold text-text-dark">{order.tenant?.email}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-text-muted font-semibold">🏠 Hostel</p>
+                          <p className="font-semibold text-text-dark">{order.tenant?.hostel?.name || 'N/A'}</p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3 pb-3 border-b">
+                        <div>
+                          <p className="text-sm text-text-muted font-semibold">🚪 Room Number</p>
+                          <p className="font-semibold text-text-dark">{order.tenant?.room?.roomNumber || order.deliveryAddress?.roomNumber || 'N/A'}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-text-muted font-semibold">📍 Floor</p>
+                          <p className="font-semibold text-text-dark">{order.tenant?.room?.floor || order.deliveryAddress?.floor || 'N/A'}</p>
+                        </div>
+                        <div className="md:col-span-2">
+                          <p className="text-sm text-text-muted font-semibold">📝 Delivery Notes</p>
+                          <p className="font-semibold text-text-dark">{order.deliveryAddress?.notes || 'No special notes'}</p>
+                        </div>
+                      </div>
+
+                      <div className="mb-3 pb-3 border-b">
+                        <p className="text-sm text-text-muted font-semibold mb-2">🍕 Items</p>
+                        <div className="space-y-1">
+                          {order.items?.map((item, idx) => (
+                            <p key={idx} className="text-text-dark">
+                              {item.quantity}x {item.name} - ₹{(item.price * item.quantity).toFixed(2)}
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                          <p className="text-sm text-text-muted font-semibold">💰 Total</p>
+                          <p className="font-bold text-lg text-primary">₹{order.totalAmount.toFixed(2)}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-text-muted font-semibold">💳 Payment</p>
+                          <p className="font-semibold text-text-dark">{order.paymentStatus === 'paid' ? '✓ Paid' : 'Pending'}</p>
+                        </div>
+                      </div>
+
+                      {order.specialInstructions && (
+                        <div className="mb-3 pb-3 border-b bg-white p-2 rounded">
+                          <p className="text-sm text-text-muted font-semibold">📌 Special Instructions</p>
+                          <p className="text-text-dark">{order.specialInstructions}</p>
+                        </div>
+                      )}
+
+                      {order.orderStatus === 'pending' && (
+                        <div className="flex gap-3">
+                          <button
+                            onClick={() => handleUpdateOrderStatus(order._id, 'confirmed')}
+                            disabled={ordersLoading}
+                            className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white py-2 rounded-lg font-semibold transition"
+                          >
+                            ✓ Accept Order
+                          </button>
+                          <button
+                            onClick={() => handleUpdateOrderStatus(order._id, 'cancelled')}
+                            disabled={ordersLoading}
+                            className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-gray-400 text-white py-2 rounded-lg font-semibold transition"
+                          >
+                            ✗ Reject Order
+                          </button>
+                        </div>
+                      )}
+
+                      {order.orderStatus === 'confirmed' && (
+                        <button
+                          onClick={() => handleUpdateOrderStatus(order._id, 'preparing')}
+                          disabled={ordersLoading}
+                          className="w-full bg-orange-600 hover:bg-orange-700 disabled:bg-gray-400 text-white py-2 rounded-lg font-semibold transition"
+                        >
+                          Start Preparing
+                        </button>
+                      )}
+
+                      {order.orderStatus === 'preparing' && (
+                        <button
+                          onClick={() => handleUpdateOrderStatus(order._id, 'ready')}
+                          disabled={ordersLoading}
+                          className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white py-2 rounded-lg font-semibold transition"
+                        >
+                          Mark as Ready
+                        </button>
+                      )}
+
+                      {order.orderStatus === 'ready' && (
+                        <button
+                          onClick={() => handleUpdateOrderStatus(order._id, 'delivered')}
+                          disabled={ordersLoading}
+                          className="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white py-2 rounded-lg font-semibold transition"
+                        >
+                          Mark as Delivered
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -924,8 +1138,58 @@ export default function CanteenDashboard() {
 
           {activeTab === 'feedback' && (
             <div className="card">
-              <h3 className="text-2xl font-bold mb-4 text-text-dark">Feedback</h3>
-              <p className="text-text-muted">Coming soon...</p>
+              <h3 className="text-2xl font-bold mb-6 text-text-dark">⭐ Customer Feedback & Ratings</h3>
+              
+              {feedbacksLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                  <span className="ml-2 text-text-muted">Loading feedbacks...</span>
+                </div>
+              ) : feedbacks && feedbacks.length > 0 ? (
+                <div className="space-y-4">
+                  {feedbacks.map(feedback => (
+                    <div key={feedback._id} className="border-2 border-yellow-200 rounded-lg p-4 bg-yellow-50">
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <p className="font-bold text-text-dark">Order #{feedback.orderDetails?.orderNumber}</p>
+                          <p className="text-sm text-text-muted">By: {feedback.tenantName || 'Anonymous'}</p>
+                        </div>
+                        <div className="text-right">
+                          <div className="flex gap-1 justify-end mb-1">
+                            {[...Array(5)].map((_, i) => (
+                              <span key={i} className={i < feedback.rating ? 'text-yellow-400' : 'text-gray-300'}>
+                                ⭐
+                              </span>
+                            ))}
+                          </div>
+                          <p className="text-sm font-semibold text-yellow-600">{feedback.rating}/5</p>
+                        </div>
+                      </div>
+                      
+                      <div className="mb-3 pb-3 border-b">
+                        <p className="text-sm text-text-muted">
+                          <span className="font-semibold">Amount:</span> ₹{feedback.orderDetails?.totalAmount}
+                        </p>
+                      </div>
+
+                      {feedback.comment && (
+                        <div className="bg-white p-3 rounded mb-2">
+                          <p className="text-text-dark">{feedback.comment}</p>
+                        </div>
+                      )}
+                      
+                      <p className="text-xs text-text-muted">
+                        {new Date(feedback.createdAt).toLocaleDateString()} at {new Date(feedback.createdAt).toLocaleTimeString()}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <p className="text-text-muted mb-2 text-lg">No feedback received yet</p>
+                  <p className="text-sm text-text-muted">Feedbacks from customers will appear here once they rate their orders</p>
+                </div>
+              )}
             </div>
           )}
 

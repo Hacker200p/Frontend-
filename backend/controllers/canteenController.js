@@ -10,10 +10,30 @@ const cloudinary = require('../config/cloudinary');
 // @access  Private/CanteenProvider
 const createCanteen = async (req, res) => {
   try {
+    const { hostel } = req.body;
+
+    // Verify hostel exists
+    const Hostel = require('../models/Hostel');
+    const hostelData = await Hostel.findById(hostel);
+
+    if (!hostelData) {
+      return res.status(404).json({ success: false, message: 'Hostel not found' });
+    }
+
+    // Check if this hostel already has a canteen
+    if (hostelData.canteen) {
+      return res.status(400).json({ success: false, message: 'This hostel already has a canteen' });
+    }
+
     const canteen = await Canteen.create({
       ...req.body,
       provider: req.user.id,
     });
+
+    // Update hostel to reference this canteen
+    hostelData.canteen = canteen._id;
+    hostelData.hasCanteen = true;
+    await hostelData.save();
 
     req.user.canteens.push(canteen._id);
     await req.user.save();
@@ -56,6 +76,7 @@ const getAvailableHostels = async (req, res) => {
 // @access  Private/CanteenProvider
 const deleteCanteen = async (req, res) => {
   try {
+    const Hostel = require('../models/Hostel');
     const canteen = await Canteen.findById(req.params.id);
 
     if (!canteen) {
@@ -68,6 +89,12 @@ const deleteCanteen = async (req, res) => {
 
     // Delete all menu items associated with this canteen
     await MenuItem.deleteMany({ canteen: canteen._id });
+
+    // Update hostel to remove canteen reference
+    await Hostel.findByIdAndUpdate(canteen.hostel, {
+      canteen: null,
+      hasCanteen: false
+    });
 
     // Delete the canteen
     await Canteen.findByIdAndDelete(req.params.id);
@@ -393,11 +420,32 @@ const getProviderOrders = async (req, res) => {
     if (status) query.orderStatus = status;
 
     const orders = await Order.find(query)
-      .populate('tenant', 'name phone')
+      .populate('tenant', 'name phone email currentHostel currentRoom')
       .populate('canteen', 'name')
       .sort({ createdAt: -1 });
 
-    res.json({ success: true, data: orders });
+    // Enhance orders with hostel and room details
+    const enhancedOrders = await Promise.all(orders.map(async (order) => {
+      const orderObj = order.toObject();
+      
+      if (order.tenant?.currentHostel) {
+        const Hostel = require('../models/Hostel');
+        const Room = require('../models/Room');
+        
+        const hostel = await Hostel.findById(order.tenant.currentHostel).select('name address');
+        const room = await Room.findById(order.tenant.currentRoom).select('roomNumber floor');
+        
+        orderObj.tenant = {
+          ...orderObj.tenant,
+          hostel: hostel ? { name: hostel.name, address: hostel.address } : null,
+          room: room ? { roomNumber: room.roomNumber, floor: room.floor } : null,
+        };
+      }
+      
+      return orderObj;
+    }));
+
+    res.json({ success: true, data: enhancedOrders });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -605,7 +653,7 @@ const getCanteenSubscriptions = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
 
-    const subscriptions = await Subscription.find({ canteen: req.params.id })
+    const subscriptions = await Subscription.find({ canteen: req.params.id, status: 'active' })
       .populate('tenant', 'name phone email')
       .sort({ createdAt: -1 });
 
@@ -645,6 +693,128 @@ const cancelSubscription = async (req, res) => {
   }
 };
 
+// @desc    Submit feedback for an order
+// @route   POST /api/canteen/feedback
+// @access  Private/Tenant
+const submitFeedback = async (req, res) => {
+  try {
+    const Feedback = require('../models/Feedback');
+    const { order, canteen, rating, comment } = req.body;
+
+    if (!order || !canteen || !rating) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Order ID, Canteen ID, and rating are required' 
+      });
+    }
+
+    if (rating < 1 || rating > 5) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Rating must be between 1 and 5' 
+      });
+    }
+
+    // Get order details
+    const Order = require('../models/Order');
+    const orderData = await Order.findById(order).populate('canteen');
+
+    if (!orderData) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
+    // Check if user is the tenant who placed the order
+    if (orderData.tenant.toString() !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+    }
+
+    const feedback = await Feedback.create({
+      user: req.user.id,
+      targetType: 'order',
+      targetId: order,
+      rating,
+      comment: comment || '',
+      order,
+      canteen,
+      tenant: req.user.id,
+      tenantName: req.user.name,
+      orderDetails: {
+        orderNumber: orderData.orderNumber,
+        canteenName: orderData.canteen?.name,
+        totalAmount: orderData.totalAmount,
+      },
+    });
+
+    await feedback.populate('tenant', 'name');
+
+    res.status(201).json({
+      success: true,
+      data: feedback,
+    });
+  } catch (error) {
+    console.error('Error submitting feedback:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Get feedbacks for a canteen
+// @route   GET /api/canteen/feedback/:canteenId
+// @access  Private/CanteenProvider
+const getCanteenFeedbacks = async (req, res) => {
+  try {
+    const Feedback = require('../models/Feedback');
+    const { canteenId } = req.params;
+
+    // Verify provider owns this canteen
+    const canteen = await Canteen.findById(canteenId);
+    if (!canteen) {
+      return res.status(404).json({ success: false, message: 'Canteen not found' });
+    }
+
+    if (canteen.provider.toString() !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+    }
+
+    const feedbacks = await Feedback.find({
+      targetType: 'order',
+      canteen: canteenId,
+    })
+      .populate('tenant', 'name email phone')
+      .sort({ createdAt: -1 });
+
+    res.json({ success: true, data: feedbacks });
+  } catch (error) {
+    console.error('Error fetching feedbacks:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Get all feedbacks for provider's canteens
+// @route   GET /api/canteen/provider/feedbacks
+// @access  Private/CanteenProvider
+const getProviderFeedbacks = async (req, res) => {
+  try {
+    const Feedback = require('../models/Feedback');
+
+    // Get all canteens owned by provider
+    const providerCanteens = await Canteen.find({ provider: req.user.id });
+    const canteenIds = providerCanteens.map(c => c._id);
+
+    // Get all feedbacks for these canteens
+    const feedbacks = await Feedback.find({
+      targetType: 'order',
+      canteen: { $in: canteenIds },
+    })
+      .populate('tenant', 'name email phone')
+      .sort({ createdAt: -1 });
+
+    res.json({ success: true, data: feedbacks });
+  } catch (error) {
+    console.error('Error fetching feedbacks:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   createCanteen,
   getMyCanteens,
@@ -665,4 +835,7 @@ module.exports = {
   getMySubscriptions,
   getCanteenSubscriptions,
   cancelSubscription,
+  submitFeedback,
+  getCanteenFeedbacks,
+  getProviderFeedbacks,
 };

@@ -6,6 +6,11 @@ const feedbackSchema = new mongoose.Schema({
     ref: 'User',
     required: true,
   },
+  tenant: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  },
+  tenantName: String,
   targetType: {
     type: String,
     enum: ['hostel', 'canteen', 'order'],
@@ -15,6 +20,14 @@ const feedbackSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     required: true,
   },
+  order: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Order',
+  },
+  canteen: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Canteen',
+  },
   rating: {
     type: Number,
     min: 1,
@@ -23,7 +36,12 @@ const feedbackSchema = new mongoose.Schema({
   },
   comment: {
     type: String,
-    required: true,
+    default: '',
+  },
+  orderDetails: {
+    orderNumber: String,
+    canteenName: String,
+    totalAmount: Number,
   },
   photos: [{
     url: String,
