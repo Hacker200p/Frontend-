@@ -56,6 +56,10 @@ export default function OwnerDashboard() {
   const [selectedTenantHostel, setSelectedTenantHostel] = useState('all')
   const [tenantSearchQuery, setTenantSearchQuery] = useState('')
   
+  // Video modal state
+  const [showVideoModal, setShowVideoModal] = useState(false)
+  const [currentVideoUrl, setCurrentVideoUrl] = useState('')
+  
   // Add Room form state
   const [roomForm, setRoomForm] = useState({
     hostelId: '',
@@ -638,9 +642,16 @@ export default function OwnerDashboard() {
                                   📷 {room.photos.length}
                                 </span>
                                 {hasVideo && (
-                                  <span className="bg-blue-500 text-white text-xs px-2 py-1 rounded">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setCurrentVideoUrl(room.videoUrl)
+                                      setShowVideoModal(true)
+                                    }}
+                                    className="bg-blue-500 hover:bg-blue-600 text-white text-xs px-2 py-1 rounded transition cursor-pointer"
+                                  >
                                     🎥 Video
-                                  </span>
+                                  </button>
                                 )}
                                 {room.view360Url && (
                                   <span className="bg-purple-500 text-white text-xs px-2 py-1 rounded">
@@ -650,16 +661,36 @@ export default function OwnerDashboard() {
                               </div>
                             </>
                           ) : hasVideo ? (
-                            <div className="relative w-full h-full">
+                            <div 
+                              className="relative w-full h-full cursor-pointer group"
+                              onClick={() => {
+                                setCurrentVideoUrl(room.videoUrl)
+                                setShowVideoModal(true)
+                              }}
+                            >
                               <video 
                                 src={room.videoUrl} 
                                 className="w-full h-full object-cover"
-                                controls
+                                muted
                               />
+                              <div className="absolute inset-0 bg-black/40 group-hover:bg-black/50 transition flex items-center justify-center">
+                                <div className="bg-white rounded-full p-4 group-hover:scale-110 transition">
+                                  <svg className="w-12 h-12 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"/>
+                                  </svg>
+                                </div>
+                              </div>
                               <div className="absolute bottom-3 left-3">
-                                <span className="bg-blue-500 text-white text-xs px-2 py-1 rounded">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setCurrentVideoUrl(room.videoUrl)
+                                    setShowVideoModal(true)
+                                  }}
+                                  className="bg-blue-500 hover:bg-blue-600 text-white text-xs px-2 py-1 rounded transition cursor-pointer"
+                                >
                                   🎥 Video
-                                </span>
+                                </button>
                               </div>
                             </div>
                           ) : (
@@ -2265,6 +2296,41 @@ export default function OwnerDashboard() {
               </button>
             </div>
           </form>
+        </div>
+      </div>
+    )}
+
+    {/* Video Modal */}
+    {showVideoModal && (
+      <div 
+        className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"
+        onClick={() => setShowVideoModal(false)}
+      >
+        <div 
+          className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="bg-gradient-to-r from-primary to-blue-600 text-white p-4 flex justify-between items-center">
+            <h3 className="text-xl font-bold flex items-center gap-2">
+              🎥 Room Video
+            </h3>
+            <button
+              onClick={() => setShowVideoModal(false)}
+              className="text-white hover:bg-white/20 rounded-full p-2 transition-colors"
+            >
+              <X size={24} />
+            </button>
+          </div>
+          <div className="p-4 bg-black">
+            <video
+              src={currentVideoUrl}
+              controls
+              autoPlay
+              className="w-full max-h-[70vh] rounded-lg"
+            >
+              Your browser does not support the video tag.
+            </video>
+          </div>
         </div>
       </div>
     )}

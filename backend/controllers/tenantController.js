@@ -407,12 +407,86 @@ const bookRoom = async (req, res) => {
   }
 };
 
+// @desc    Submit feedback for an order
+// @route   POST /api/tenant/orders/:orderId/feedback
+// @access  Private/Tenant
+const submitOrderFeedback = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { rating, comment } = req.body;
+
+    // Verify order exists and belongs to user
+    const order = await Order.findById(orderId);
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
+    if (order.tenant.toString() !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Not authorized to provide feedback for this order' });
+    }
+
+    // Check if order is delivered
+    if (order.orderStatus !== 'delivered') {
+      return res.status(400).json({ success: false, message: 'Can only provide feedback for delivered orders' });
+    }
+
+    // Check if feedback already exists
+    const existingFeedback = await Feedback.findOne({ 
+      targetType: 'order', 
+      targetId: orderId,
+      user: req.user.id 
+    });
+
+    if (existingFeedback) {
+      return res.status(400).json({ success: false, message: 'Feedback already submitted for this order' });
+    }
+
+    // Create feedback
+    const feedback = await Feedback.create({
+      user: req.user.id,
+      targetType: 'order',
+      targetId: orderId,
+      rating,
+      comment,
+    });
+
+    // Update order with feedback reference
+    order.feedback = feedback._id;
+    await order.save();
+
+    // Update canteen average rating
+    const canteenFeedbacks = await Feedback.find({ 
+      targetType: 'order',
+      targetId: { $in: await Order.find({ canteen: order.canteen }).distinct('_id') }
+    });
+    
+    if (canteenFeedbacks.length > 0) {
+      const avgRating = canteenFeedbacks.reduce((sum, f) => sum + f.rating, 0) / canteenFeedbacks.length;
+      const Canteen = require('../models/Canteen');
+      await Canteen.findByIdAndUpdate(order.canteen, { 
+        rating: avgRating,
+        reviewCount: canteenFeedbacks.length 
+      });
+    }
+
+    res.status(201).json({ 
+      success: true, 
+      message: 'Feedback submitted successfully',
+      data: feedback 
+    });
+  } catch (error) {
+    console.error('Submit order feedback error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   searchHostels,
   getHostelDetails,
   getMyExpenses,
   addExpense,
   submitFeedback,
+  submitOrderFeedback,
   getMyContracts,
   createBookingOrder,
   bookRoom,

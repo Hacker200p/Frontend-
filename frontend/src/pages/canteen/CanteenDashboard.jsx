@@ -101,6 +101,12 @@ export default function CanteenDashboard() {
   const [feedbackFilter, setFeedbackFilter] = useState('all')
   const [showFeedbackResponse, setShowFeedbackResponse] = useState(null)
   const [feedbackResponse, setFeedbackResponse] = useState('')
+  const [orders, setOrders] = useState([])
+  const [ordersLoading, setOrdersLoading] = useState(false)
+  const [orderFilter, setOrderFilter] = useState('all') // all, pending, confirmed, preparing, ready, delivered
+  const [showDeliveryTimeModal, setShowDeliveryTimeModal] = useState(false)
+  const [selectedOrderForDelivery, setSelectedOrderForDelivery] = useState(null)
+  const [estimatedDeliveryMinutes, setEstimatedDeliveryMinutes] = useState(30)
   const [canteenSettings, setCanteenSettings] = useState({
     isOpen: true,
     operatingHours: {
@@ -119,6 +125,21 @@ export default function CanteenDashboard() {
     fetchCanteens()
     fetchHostels()
   }, [])
+
+  useEffect(() => {
+    if (activeTab === 'orders' || activeTab === 'delivery' || activeTab === 'overview') {
+      fetchOrders()
+      
+      // Auto-refresh orders every 30 seconds for orders and delivery tabs
+      if (activeTab === 'orders' || activeTab === 'delivery') {
+        const interval = setInterval(() => {
+          fetchOrders()
+        }, 30000)
+        
+        return () => clearInterval(interval)
+      }
+    }
+  }, [activeTab])
 
   useEffect(() => {
     if (selectedCanteen) {
@@ -202,40 +223,88 @@ export default function CanteenDashboard() {
   const fetchFeedbacks = async () => {
     if (!selectedCanteen) return
     try {
-      // Mock feedbacks for now - implement API later
-      const mockFeedbacks = [
-        {
-          _id: '1',
-          tenant: { name: 'Raj Kumar', phone: '9876543210' },
-          rating: 5,
-          comment: 'Excellent food quality! The biryani is amazing.',
-          category: 'food_quality',
-          createdAt: new Date().toISOString(),
-          response: null
-        },
-        {
-          _id: '2',
-          tenant: { name: 'Priya Singh', phone: '9876543211' },
-          rating: 4,
-          comment: 'Good service but delivery was a bit late.',
-          category: 'delivery',
-          createdAt: new Date(Date.now() - 86400000).toISOString(),
-          response: null
-        },
-        {
-          _id: '3',
-          tenant: { name: 'Amit Sharma', phone: '9876543212' },
-          rating: 3,
-          comment: 'Menu variety could be improved.',
-          category: 'menu',
-          createdAt: new Date(Date.now() - 172800000).toISOString(),
-          response: 'Thank you for your feedback. We are working on adding more items!'
-        }
-      ]
-      setFeedbacks(mockFeedbacks)
+      const response = await canteenAPI.getCanteenFeedbacks(selectedCanteen._id)
+      setFeedbacks(response.data?.data || [])
     } catch (error) {
       console.error('Error fetching feedbacks:', error)
+      setFeedbacks([])
     }
+  }
+
+  // Utility function to format address from various formats
+  const formatAddress = (addressData) => {
+    if (!addressData) return ''
+    
+    let address = addressData
+    
+    // Handle stringified object format like "{ street: 'unit 5', ... }"
+    if (typeof address === 'string' && address.includes('street:')) {
+      const streetMatch = address.match(/street:\s*'([^']*)'/)
+      const cityMatch = address.match(/city:\s*'([^']*)'/)
+      const stateMatch = address.match(/state:\s*'([^']*)'/)
+      const pincodeMatch = address.match(/pincode:\s*'([^']*)'/)
+      
+      const street = streetMatch ? streetMatch[1] : ''
+      const city = cityMatch ? cityMatch[1] : ''
+      const state = stateMatch ? stateMatch[1] : ''
+      const pincode = pincodeMatch ? pincodeMatch[1] : ''
+      
+      return `${street}, ${city}, ${state} - ${pincode}`
+        .replace(/,\s*,/g, ',').replace(/^,\s*|,\s*$/g, '').replace(/\s*-\s*$/, '').trim()
+    }
+    
+    // Handle actual object format
+    if (typeof address === 'object' && address !== null) {
+      return `${address.street || ''}, ${address.city || ''}, ${address.state || ''} - ${address.pincode || ''}`
+        .replace(/,\s*,/g, ',').replace(/^,\s*|,\s*$/g, '').replace(/\s*-\s*$/, '').trim()
+    }
+    
+    // Already a proper string
+    return address
+  }
+
+  const fetchOrders = async () => {
+    try {
+      setOrdersLoading(true)
+      const response = await canteenAPI.getOrders()
+      setOrders(response.data?.data || [])
+    } catch (error) {
+      console.error('Error fetching orders:', error)
+    } finally {
+      setOrdersLoading(false)
+    }
+  }
+
+  const handleUpdateOrderStatus = async (orderId, newStatus, deliveryMinutes = null) => {
+    try {
+      await canteenAPI.updateOrderStatus(orderId, newStatus, deliveryMinutes)
+      // Refresh orders
+      await fetchOrders()
+      const statusMessages = {
+        confirmed: '✓ Order confirmed!',
+        preparing: '👨‍🍳 Preparing order...',
+        ready: '✓ Order is ready for delivery!',
+        delivered: '🎉 Order delivered successfully!',
+        cancelled: '✕ Order cancelled'
+      }
+      alert(statusMessages[newStatus] || `Order status updated to: ${newStatus}`)
+    } catch (error) {
+      console.error('Error updating order status:', error)
+      alert('Failed to update order status: ' + (error.response?.data?.message || error.message))
+    }
+  }
+
+  const handleConfirmWithDeliveryTime = (order) => {
+    setSelectedOrderForDelivery(order)
+    setShowDeliveryTimeModal(true)
+  }
+
+  const confirmOrderWithTime = async () => {
+    if (!selectedOrderForDelivery) return
+    await handleUpdateOrderStatus(selectedOrderForDelivery._id, 'confirmed', estimatedDeliveryMinutes)
+    setShowDeliveryTimeModal(false)
+    setSelectedOrderForDelivery(null)
+    setEstimatedDeliveryMinutes(30)
   }
 
   const handleUpdateSubscriptionPlans = async () => {
@@ -571,32 +640,42 @@ export default function CanteenDashboard() {
                     <p className="text-text-muted text-sm font-semibold">Orders Today</p>
                     <span className="text-3xl">📦</span>
                   </div>
-                  <h3 className="text-4xl font-bold text-primary">24</h3>
-                  <p className="text-green-600 text-sm mt-2">↑ 12% from yesterday</p>
+                  <h3 className="text-4xl font-bold text-primary">
+                    {orders.filter(o => new Date(o.createdAt).toDateString() === new Date().toDateString()).length}
+                  </h3>
+                  <p className="text-text-muted text-sm mt-2">
+                    {orders.filter(o => o.orderStatus === 'pending' || o.orderStatus === 'confirmed').length} pending
+                  </p>
                 </div>
                 <div className="bg-white rounded-xl p-6 shadow-lg border-l-4 border-purple-500 hover:shadow-xl transition">
                   <div className="flex items-center justify-between mb-3">
-                    <p className="text-text-muted text-sm font-semibold">Active Tenants</p>
+                    <p className="text-text-muted text-sm font-semibold">Active Subscribers</p>
                     <span className="text-3xl">👥</span>
                   </div>
-                  <h3 className="text-4xl font-bold text-purple-600">158</h3>
-                  <p className="text-green-600 text-sm mt-2">↑ 8 new this week</p>
+                  <h3 className="text-4xl font-bold text-purple-600">
+                    {subscriptions.filter(s => s.status === 'active').length}
+                  </h3>
+                  <p className="text-text-muted text-sm mt-2">Total subscriptions</p>
                 </div>
                 <div className="bg-white rounded-xl p-6 shadow-lg border-l-4 border-yellow-500 hover:shadow-xl transition">
                   <div className="flex items-center justify-between mb-3">
                     <p className="text-text-muted text-sm font-semibold">Rating</p>
                     <span className="text-3xl">⭐</span>
                   </div>
-                  <h3 className="text-4xl font-bold text-yellow-600">4.7/5</h3>
-                  <p className="text-text-muted text-sm mt-2">Based on 89 reviews</p>
+                  <h3 className="text-4xl font-bold text-yellow-600">
+                    {feedbacks.length > 0 ? (feedbacks.reduce((acc, f) => acc + f.rating, 0) / feedbacks.length).toFixed(1) : '0.0'}/5
+                  </h3>
+                  <p className="text-text-muted text-sm mt-2">Based on {feedbacks.length} reviews</p>
                 </div>
                 <div className="bg-white rounded-xl p-6 shadow-lg border-l-4 border-orange-500 hover:shadow-xl transition">
                   <div className="flex items-center justify-between mb-3">
-                    <p className="text-text-muted text-sm font-semibold">Pending</p>
+                    <p className="text-text-muted text-sm font-semibold">Active Orders</p>
                     <span className="text-3xl">🚚</span>
                   </div>
-                  <h3 className="text-4xl font-bold text-orange-600">6</h3>
-                  <p className="text-orange-600 text-sm mt-2">Deliveries in progress</p>
+                  <h3 className="text-4xl font-bold text-orange-600">
+                    {orders.filter(o => ['confirmed', 'preparing', 'ready'].includes(o.orderStatus)).length}
+                  </h3>
+                  <p className="text-orange-600 text-sm mt-2">In progress</p>
                 </div>
               </div>
 
@@ -685,34 +764,57 @@ export default function CanteenDashboard() {
                     Recent Activity
                   </h3>
                   <div className="space-y-4">
-                    <div className="flex items-start gap-3 pb-3 border-b">
-                      <span className="text-2xl">✅</span>
-                      <div>
-                        <p className="font-semibold text-sm text-text-dark">Order #1234 completed</p>
-                        <p className="text-xs text-text-muted">5 minutes ago</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3 pb-3 border-b">
-                      <span className="text-2xl">🆕</span>
-                      <div>
-                        <p className="font-semibold text-sm text-text-dark">New order received</p>
-                        <p className="text-xs text-text-muted">12 minutes ago</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3 pb-3 border-b">
-                      <span className="text-2xl">⭐</span>
-                      <div>
-                        <p className="font-semibold text-sm text-text-dark">New 5-star review</p>
-                        <p className="text-xs text-text-muted">1 hour ago</p>
-                      </div>
-                    </div>
-                    <div className="flex items-start gap-3">
-                      <span className="text-2xl">🍕</span>
-                      <div>
-                        <p className="font-semibold text-sm text-text-dark">Menu item updated</p>
-                        <p className="text-xs text-text-muted">2 hours ago</p>
-                      </div>
-                    </div>
+                    {(() => {
+                      const recentOrders = [...orders].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 3)
+                      const recentFeedbacks = [...feedbacks].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, 2)
+                      
+                      const activities = [
+                        ...recentOrders.map(order => ({
+                          type: 'order',
+                          icon: order.orderStatus === 'delivered' ? '✅' : '🆕',
+                          text: order.orderStatus === 'delivered' 
+                            ? `Order #${order.orderNumber} delivered`
+                            : `New order #${order.orderNumber} - ${order.orderStatus}`,
+                          time: order.createdAt
+                        })),
+                        ...recentFeedbacks.map(feedback => ({
+                          type: 'feedback',
+                          icon: '⭐',
+                          text: `New ${feedback.rating}-star review`,
+                          time: feedback.createdAt
+                        }))
+                      ].sort((a, b) => new Date(b.time) - new Date(a.time)).slice(0, 5)
+
+                      if (activities.length === 0) {
+                        return (
+                          <div className="text-center py-8 text-text-muted">
+                            <p>No recent activity</p>
+                          </div>
+                        )
+                      }
+
+                      return activities.map((activity, idx) => (
+                        <div key={idx} className={`flex items-start gap-3 ${idx < activities.length - 1 ? 'pb-3 border-b' : ''}`}>
+                          <span className="text-2xl">{activity.icon}</span>
+                          <div className="flex-1">
+                            <p className="font-semibold text-sm text-text-dark">{activity.text}</p>
+                            <p className="text-xs text-text-muted">
+                              {(() => {
+                                const diff = Date.now() - new Date(activity.time).getTime()
+                                const minutes = Math.floor(diff / 60000)
+                                const hours = Math.floor(diff / 3600000)
+                                const days = Math.floor(diff / 86400000)
+                                
+                                if (minutes < 1) return 'Just now'
+                                if (minutes < 60) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`
+                                if (hours < 24) return `${hours} hour${hours > 1 ? 's' : ''} ago`
+                                return `${days} day${days > 1 ? 's' : ''} ago`
+                              })()}
+                            </p>
+                          </div>
+                        </div>
+                      ))
+                    })()}
                   </div>
                 </div>
               </div>
@@ -720,32 +822,180 @@ export default function CanteenDashboard() {
           )}
 
           {activeTab === 'orders' && (
-            <div className="card">
-              <h3 className="text-2xl font-bold mb-4 text-text-dark">Orders</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-100">
-                    <tr>
-                      <th className="px-4 py-2 text-left">Order ID</th>
-                      <th className="px-4 py-2 text-left">Tenant</th>
-                      <th className="px-4 py-2 text-left">Items</th>
-                      <th className="px-4 py-2 text-left">Status</th>
-                      <th className="px-4 py-2 text-left">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr className="border-b">
-                      <td className="px-4 py-2">ORD001</td>
-                      <td className="px-4 py-2">John Doe</td>
-                      <td className="px-4 py-2">2x Biryani</td>
-                      <td className="px-4 py-2"><span className="bg-yellow-100 px-2 py-1 rounded text-yellow-800">Pending</span></td>
-                      <td className="px-4 py-2 space-x-2">
-                        <button className="approve-btn">Accept</button>
-                        <button className="reject-btn">Reject</button>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+            <div className="space-y-6">
+              {/* Filter Buttons */}
+              <div className="card">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-2xl font-bold text-text-dark">📋 Custom Orders</h3>
+                  <button
+                    onClick={fetchOrders}
+                    className="btn-secondary text-sm"
+                  >
+                    🔄 Refresh
+                  </button>
+                </div>
+                
+                <div className="flex gap-2 flex-wrap mb-6">
+                  {['all', 'pending', 'confirmed', 'preparing', 'ready', 'delivered', 'cancelled'].map(filter => (
+                    <button
+                      key={filter}
+                      onClick={() => setOrderFilter(filter)}
+                      className={`px-4 py-2 rounded-lg font-semibold capitalize transition ${
+                        orderFilter === filter
+                          ? 'bg-primary text-white'
+                          : 'bg-gray-100 text-text-dark hover:bg-gray-200'
+                      }`}
+                    >
+                      {filter}
+                    </button>
+                  ))}
+                </div>
+
+                {ordersLoading ? (
+                  <div className="text-center py-12">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+                    <p className="text-text-muted">Loading orders...</p>
+                  </div>
+                ) : orders.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="text-6xl mb-4">📋</div>
+                    <p className="text-text-muted text-lg">No orders yet</p>
+                    <p className="text-sm text-gray-500 mt-2">Orders from tenants will appear here</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {orders
+                      .filter(order => orderFilter === 'all' || order.orderStatus === orderFilter)
+                      .map(order => (
+                        <div key={order._id} className="border-2 rounded-xl p-4 hover:shadow-lg transition">
+                          <div className="flex items-start justify-between mb-4">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3 mb-2">
+                                <h4 className="font-bold text-lg text-text-dark">Order #{order.orderNumber}</h4>
+                                <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                                  order.orderStatus === 'delivered' ? 'bg-green-100 text-green-700' :
+                                  order.orderStatus === 'cancelled' ? 'bg-red-100 text-red-700' :
+                                  order.orderStatus === 'ready' ? 'bg-blue-100 text-blue-700' :
+                                  order.orderStatus === 'preparing' ? 'bg-yellow-100 text-yellow-700' :
+                                  order.orderStatus === 'confirmed' ? 'bg-purple-100 text-purple-700' :
+                                  'bg-gray-100 text-gray-700'
+                                }`}>
+                                  {order.orderStatus}
+                                </span>
+                                <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                                  order.paymentStatus === 'paid' ? 'bg-green-100 text-green-700' :
+                                  'bg-yellow-100 text-yellow-700'
+                                }`}>
+                                  {order.paymentStatus}
+                                </span>
+                              </div>
+                              <div className="text-sm text-text-muted space-y-1">
+                                <p><span className="font-semibold">👤 Tenant:</span> {order.tenant?.name || 'N/A'} ({order.tenant?.phone})</p>
+                                <p><span className="font-semibold">🏠 Delivery:</span> Room {order.deliveryAddress?.roomNumber}, Floor {order.deliveryAddress?.floor}, {order.deliveryAddress?.hostelName}</p>
+                                <p><span className="font-semibold">🕐 Ordered:</span> {new Date(order.createdAt).toLocaleString('en-IN')}</p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-2xl font-bold text-primary">₹{order.totalAmount}</p>
+                              <p className="text-xs text-text-muted mt-1">{order.paymentMethod}</p>
+                            </div>
+                          </div>
+
+                          {/* Order Items */}
+                          <div className="bg-gray-50 rounded-lg p-3 mb-4">
+                            <p className="text-xs font-semibold text-text-dark mb-2">📦 Items:</p>
+                            <div className="space-y-1">
+                              {order.items.map((item, idx) => (
+                                <div key={idx} className="flex justify-between text-sm">
+                                  <span className="text-text-dark">{item.name} <span className="text-text-muted">x{item.quantity}</span></span>
+                                  <span className="font-semibold">₹{item.price * item.quantity}</span>
+                                </div>
+                              ))}
+                              {order.deliveryCharge > 0 && (
+                                <div className="flex justify-between text-sm border-t pt-1">
+                                  <span className="text-text-muted">Delivery Charge</span>
+                                  <span className="font-semibold">₹{order.deliveryCharge}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {order.specialInstructions && (
+                            <div className="bg-blue-50 border-l-4 border-blue-500 rounded p-3 mb-4">
+                              <p className="text-xs font-semibold text-blue-900 mb-1">📝 Special Instructions:</p>
+                              <p className="text-sm text-blue-800">{order.specialInstructions}</p>
+                            </div>
+                          )}
+
+                          {/* Estimated Delivery Time Display */}
+                          {order.estimatedDeliveryTime && order.orderStatus !== 'delivered' && order.orderStatus !== 'cancelled' && (
+                            <div className="bg-green-50 border-l-4 border-green-500 rounded p-3 mb-4">
+                              <p className="text-xs font-semibold text-green-900 mb-1">⏰ Estimated Delivery:</p>
+                              <p className="text-sm text-green-800 font-bold">
+                                {new Date(order.estimatedDeliveryTime).toLocaleTimeString('en-IN', { 
+                                  hour: '2-digit', 
+                                  minute: '2-digit' 
+                                })}
+                                {' '}({Math.round((new Date(order.estimatedDeliveryTime) - new Date()) / 60000)} min remaining)
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Status Update Actions */}
+                          {order.orderStatus !== 'delivered' && order.orderStatus !== 'cancelled' && (
+                            <div className="flex gap-2 flex-wrap">
+                              {order.orderStatus === 'pending' && (
+                                <>
+                                  <button
+                                    onClick={() => handleConfirmWithDeliveryTime(order)}
+                                    className="px-4 py-2 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600 transition text-sm"
+                                  >
+                                    ✓ Confirm Order
+                                  </button>
+                                  <button
+                                    onClick={() => handleUpdateOrderStatus(order._id, 'cancelled')}
+                                    className="px-4 py-2 bg-red-500 text-white rounded-lg font-semibold hover:bg-red-600 transition text-sm"
+                                  >
+                                    ✕ Cancel Order
+                                  </button>
+                                </>
+                              )}
+                              {order.orderStatus === 'confirmed' && (
+                                <button
+                                  onClick={() => handleUpdateOrderStatus(order._id, 'preparing')}
+                                  className="px-4 py-2 bg-yellow-500 text-white rounded-lg font-semibold hover:bg-yellow-600 transition text-sm"
+                                >
+                                  👨‍🍳 Start Preparing
+                                </button>
+                              )}
+                              {order.orderStatus === 'preparing' && (
+                                <button
+                                  onClick={() => handleUpdateOrderStatus(order._id, 'ready')}
+                                  className="px-4 py-2 bg-blue-500 text-white rounded-lg font-semibold hover:bg-blue-600 transition text-sm"
+                                >
+                                  ✓ Mark as Ready
+                                </button>
+                              )}
+                              {order.orderStatus === 'ready' && (
+                                <button
+                                  onClick={() => handleUpdateOrderStatus(order._id, 'delivered')}
+                                  className="px-4 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition text-sm"
+                                >
+                                  🚚 Mark as Delivered
+                                </button>
+                              )}
+                            </div>
+                          )}
+
+                          {order.orderStatus === 'delivered' && order.deliveredAt && (
+                            <div className="text-sm text-green-600 font-semibold mt-2">
+                              ✓ Delivered on {new Date(order.deliveredAt).toLocaleString('en-IN')}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1053,12 +1303,214 @@ export default function CanteenDashboard() {
 
           {activeTab === 'delivery' && (
             <div className="space-y-6">
+              {/* Active Orders for Delivery */}
               <div className="card">
-                <h3 className="text-2xl font-bold mb-6 text-text-dark">🚚 Delivery Coordination</h3>
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="text-2xl font-bold text-text-dark">🚚 Delivery Coordination - Active Orders</h3>
+                  <button
+                    onClick={fetchOrders}
+                    className="btn-secondary text-sm"
+                  >
+                    🔄 Refresh
+                  </button>
+                </div>
+                
+                {ordersLoading ? (
+                  <div className="text-center py-12">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+                    <p className="text-text-muted">Loading orders...</p>
+                  </div>
+                ) : (
+                  (() => {
+                    const activeOrders = orders.filter(o => 
+                      ['confirmed', 'preparing', 'ready'].includes(o.orderStatus) && 
+                      o.paymentStatus === 'paid'
+                    )
+                    
+                    if (activeOrders.length === 0) {
+                      return (
+                        <div className="text-center py-12">
+                          <div className="text-6xl mb-4">🚚</div>
+                          <p className="text-text-muted text-lg">No active orders for delivery</p>
+                          <p className="text-sm text-gray-500 mt-2">Orders marked as ready will appear here</p>
+                        </div>
+                      )
+                    }
+
+                    // Group orders by hostel/location
+                    const ordersByLocation = {}
+                    activeOrders.forEach(order => {
+                      const locationKey = order.deliveryAddress?.hostelName || 'Unknown Location'
+                      const hostelAddress = formatAddress(order.deliveryAddress?.hostelAddress)
+                      
+                      if (!ordersByLocation[locationKey]) {
+                        ordersByLocation[locationKey] = {
+                          hostelName: locationKey,
+                          hostelAddress: hostelAddress,
+                          orders: []
+                        }
+                      }
+                      ordersByLocation[locationKey].orders.push(order)
+                    })
+
+                    return (
+                      <div className="space-y-6">
+                        {/* Summary Stats */}
+                        <div className="grid md:grid-cols-3 gap-4">
+                          <div className="bg-gradient-to-r from-yellow-50 to-yellow-100 border-2 border-yellow-300 rounded-xl p-4">
+                            <div className="text-yellow-700 text-sm font-semibold">Confirmed Orders</div>
+                            <div className="text-3xl font-bold text-yellow-800">
+                              {activeOrders.filter(o => o.orderStatus === 'confirmed').length}
+                            </div>
+                          </div>
+                          <div className="bg-gradient-to-r from-orange-50 to-orange-100 border-2 border-orange-300 rounded-xl p-4">
+                            <div className="text-orange-700 text-sm font-semibold">Preparing</div>
+                            <div className="text-3xl font-bold text-orange-800">
+                              {activeOrders.filter(o => o.orderStatus === 'preparing').length}
+                            </div>
+                          </div>
+                          <div className="bg-gradient-to-r from-blue-50 to-blue-100 border-2 border-blue-300 rounded-xl p-4">
+                            <div className="text-blue-700 text-sm font-semibold">Ready for Delivery</div>
+                            <div className="text-3xl font-bold text-blue-800">
+                              {activeOrders.filter(o => o.orderStatus === 'ready').length}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Orders by Location */}
+                        {Object.values(ordersByLocation).map(location => (
+                          <div key={location.hostelName} className="border-2 border-primary rounded-xl overflow-hidden">
+                            {/* Location Header */}
+                            <div className="bg-gradient-to-r from-primary to-blue-600 text-white p-4">
+                              <div className="flex items-start justify-between">
+                                <div>
+                                  <h5 className="text-lg font-bold flex items-center gap-2">
+                                    🏠 {location.hostelName}
+                                    <span className="bg-white/20 px-2 py-0.5 rounded-full text-xs">
+                                      {location.orders.length} {location.orders.length === 1 ? 'order' : 'orders'}
+                                    </span>
+                                  </h5>
+                                  {location.hostelAddress && (
+                                    <p className="text-sm text-white/90 mt-1">📍 {location.hostelAddress}</p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Orders Table */}
+                            <div className="bg-white overflow-x-auto">
+                              <table className="w-full">
+                                <thead className="bg-gray-100">
+                                  <tr>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-text-dark">Order #</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-text-dark">Room</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-text-dark">Tenant</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-text-dark">Items</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-text-dark">Status</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-text-dark">Est. Delivery</th>
+                                    <th className="px-4 py-3 text-left text-xs font-semibold text-text-dark">Amount</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200">
+                                  {location.orders
+                                    .sort((a, b) => {
+                                      // Sort by status priority: ready > preparing > confirmed
+                                      const statusOrder = { ready: 0, preparing: 1, confirmed: 2 }
+                                      return statusOrder[a.orderStatus] - statusOrder[b.orderStatus]
+                                    })
+                                    .map(order => (
+                                      <tr key={order._id} className={`hover:bg-blue-50 transition ${
+                                        order.orderStatus === 'ready' ? 'bg-blue-50/50' : ''
+                                      }`}>
+                                        <td className="px-4 py-3">
+                                          <div className="font-bold text-primary">
+                                            {order.orderNumber}
+                                          </div>
+                                          <div className="text-xs text-text-muted">
+                                            {new Date(order.createdAt).toLocaleTimeString('en-IN', { 
+                                              hour: '2-digit', 
+                                              minute: '2-digit' 
+                                            })}
+                                          </div>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          <div className="font-bold text-text-dark">
+                                            Room {order.deliveryAddress?.roomNumber}
+                                          </div>
+                                          <div className="text-xs text-text-muted">
+                                            Floor {order.deliveryAddress?.floor}
+                                          </div>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          <div className="font-semibold text-text-dark">
+                                            {order.tenant?.name}
+                                          </div>
+                                          <div className="text-xs text-text-muted">
+                                            {order.tenant?.phone}
+                                          </div>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          <div className="text-sm text-text-dark">
+                                            {order.items.length} {order.items.length === 1 ? 'item' : 'items'}
+                                          </div>
+                                          <div className="text-xs text-text-muted">
+                                            {order.items.slice(0, 2).map(item => item.name).join(', ')}
+                                            {order.items.length > 2 && '...'}
+                                          </div>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          <span className={`px-2 py-1 rounded-full text-xs font-bold ${
+                                            order.orderStatus === 'ready' ? 'bg-blue-100 text-blue-700' :
+                                            order.orderStatus === 'preparing' ? 'bg-yellow-100 text-yellow-700' :
+                                            'bg-purple-100 text-purple-700'
+                                          }`}>
+                                            {order.orderStatus === 'ready' ? '✓ Ready' :
+                                             order.orderStatus === 'preparing' ? '👨‍🍳 Preparing' :
+                                             '✓ Confirmed'}
+                                          </span>
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          {order.estimatedDeliveryTime ? (
+                                            <div>
+                                              <div className="font-bold text-green-700">
+                                                {new Date(order.estimatedDeliveryTime).toLocaleTimeString('en-IN', { 
+                                                  hour: '2-digit', 
+                                                  minute: '2-digit' 
+                                                })}
+                                              </div>
+                                              <div className="text-xs text-text-muted">
+                                                {Math.max(0, Math.round((new Date(order.estimatedDeliveryTime) - new Date()) / 60000))} min
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            <span className="text-xs text-gray-400">Not set</span>
+                                          )}
+                                        </td>
+                                        <td className="px-4 py-3">
+                                          <div className="font-bold text-primary">
+                                            ₹{order.totalAmount}
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })()
+                )}
+              </div>
+
+              {/* Subscription Deliveries */}
+              <div className="card">
+                <h3 className="text-2xl font-bold mb-6 text-text-dark">📅 Subscription Meal Deliveries</h3>
                 
                 {!selectedCanteen ? (
                   <div className="text-center py-12">
-                    <p className="text-text-muted text-lg">Please select a canteen to view delivery coordination</p>
+                    <p className="text-text-muted text-lg">Please select a canteen to view subscription deliveries</p>
                   </div>
                 ) : (
                   <div className="space-y-8">
@@ -1107,7 +1559,7 @@ export default function CanteenDashboard() {
                                       </h5>
                                       {data.hostel && (
                                         <p className="text-sm text-white/90 mt-1">
-                                          📍 {data.hostel.hostelAddress}
+                                          📍 {formatAddress(data.hostel.hostelAddress)}
                                         </p>
                                       )}
                                     </div>
@@ -1605,7 +2057,7 @@ export default function CanteenDashboard() {
                                     <div>
                                       <p className="font-semibold text-text-dark">🏠 {sub.deliveryLocation.hostelName}</p>
                                       <p className="text-text-muted">Room {sub.deliveryLocation.roomNumber}, Floor {sub.deliveryLocation.floor}</p>
-                                      <p className="text-xs text-text-muted">{sub.deliveryLocation.hostelAddress}</p>
+                                      <p className="text-xs text-text-muted">{formatAddress(sub.deliveryLocation.hostelAddress)}</p>
                                     </div>
                                   ) : (
                                     <span className="text-text-muted">Not set</span>
@@ -1769,7 +2221,7 @@ export default function CanteenDashboard() {
                               <div className="flex items-start justify-between mb-3">
                                 <div className="flex-1">
                                   <div className="flex items-center gap-3 mb-2">
-                                    <div className="font-bold text-text-dark">{feedback.tenant.name}</div>
+                                    <div className="font-bold text-text-dark">{feedback.user?.name || 'Anonymous'}</div>
                                     <div className="flex items-center gap-1">
                                       {[...Array(5)].map((_, i) => (
                                         <span key={i} className={i < feedback.rating ? 'text-yellow-500' : 'text-gray-300'}>
@@ -1777,16 +2229,14 @@ export default function CanteenDashboard() {
                                         </span>
                                       ))}
                                     </div>
-                                    <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                                      feedback.category === 'food_quality' ? 'bg-purple-100 text-purple-700' :
-                                      feedback.category === 'delivery' ? 'bg-blue-100 text-blue-700' :
-                                      'bg-orange-100 text-orange-700'
-                                    }`}>
-                                      {feedback.category.replace('_', ' ')}
-                                    </span>
+                                    {feedback.targetId?.orderNumber && (
+                                      <span className="px-2 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700">
+                                        Order #{feedback.targetId.orderNumber}
+                                      </span>
+                                    )}
                                   </div>
                                   <div className="text-sm text-text-muted">
-                                    📞 {feedback.tenant.phone} • {new Date(feedback.createdAt).toLocaleDateString()}
+                                    📞 {feedback.user?.phone || 'N/A'} • {new Date(feedback.createdAt).toLocaleDateString()}
                                   </div>
                                 </div>
                               </div>
@@ -2468,6 +2918,83 @@ export default function CanteenDashboard() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delivery Time Modal */}
+      {showDeliveryTimeModal && selectedOrderForDelivery && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={() => setShowDeliveryTimeModal(false)}>
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h3 className="text-2xl font-bold text-text-dark">⏰ Set Delivery Time</h3>
+                <p className="text-sm text-gray-600 mt-1">Order #{selectedOrderForDelivery.orderNumber}</p>
+              </div>
+              <button
+                onClick={() => setShowDeliveryTimeModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-text-dark mb-2">
+                  Estimated Delivery Time (minutes)
+                </label>
+                <input
+                  type="number"
+                  value={estimatedDeliveryMinutes}
+                  onChange={(e) => setEstimatedDeliveryMinutes(parseInt(e.target.value) || 30)}
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary text-lg font-bold text-center"
+                  min="10"
+                  max="120"
+                  step="5"
+                />
+                <p className="text-xs text-gray-500 mt-2 text-center">
+                  Food will be delivered by: {new Date(Date.now() + estimatedDeliveryMinutes * 60000).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                </p>
+              </div>
+
+              <div className="grid grid-cols-4 gap-2">
+                {[15, 20, 30, 45].map(mins => (
+                  <button
+                    key={mins}
+                    onClick={() => setEstimatedDeliveryMinutes(mins)}
+                    className={`px-3 py-2 rounded-lg font-semibold text-sm transition ${
+                      estimatedDeliveryMinutes === mins
+                        ? 'bg-primary text-white'
+                        : 'bg-gray-100 text-text-dark hover:bg-gray-200'
+                    }`}
+                  >
+                    {mins}m
+                  </button>
+                ))}
+              </div>
+
+              <div className="bg-blue-50 border-l-4 border-blue-500 rounded p-3">
+                <p className="text-xs text-blue-900">
+                  💡 <strong>Tip:</strong> Set realistic delivery times to ensure customer satisfaction. Consider preparation and delivery time.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setShowDeliveryTimeModal(false)}
+                className="flex-1 px-6 py-3 rounded-xl border-2 border-gray-300 font-bold text-gray-700 hover:border-gray-400 hover:bg-gray-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmOrderWithTime}
+                className="flex-1 px-6 py-3 rounded-xl bg-gradient-to-r from-green-500 to-green-600 text-white font-bold hover:shadow-lg transition"
+              >
+                ✓ Confirm Order
+              </button>
+            </div>
           </div>
         </div>
       )}

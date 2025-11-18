@@ -147,6 +147,17 @@ export const canteenAPI = {
   verifySubscriptionPayment: (data) => api.post('/canteen/subscriptions/verify-payment', data),
   getMySubscriptions: () => api.get('/canteen/subscriptions/my-subscriptions'),
   cancelSubscription: (subscriptionId) => api.put(`/canteen/subscriptions/${subscriptionId}/cancel`),
+  // Custom order APIs
+  getMyOrders: () => api.get('/canteen/my-orders'),
+  verifyOrderPayment: (data) => api.post('/canteen/orders/verify-payment', data),
+  updateOrderStatus: (orderId, status, estimatedDeliveryMinutes = null) => {
+    const payload = { status }
+    if (estimatedDeliveryMinutes) {
+      payload.estimatedDeliveryMinutes = estimatedDeliveryMinutes
+    }
+    return api.put(`/canteen/orders/${orderId}/status`, payload)
+  },
+  getCanteenFeedbacks: (canteenId) => api.get(`/canteen/${canteenId}/feedbacks`),
 }
 
 // Contract API calls
@@ -168,6 +179,7 @@ export const tenantAPI = {
   getExpenses: () => api.get('/tenant/expenses'),
   addExpense: (data) => api.post('/tenant/expenses', data),
   submitFeedback: (data) => api.post('/tenant/feedback', data),
+  submitOrderFeedback: (orderId, data) => api.post(`/tenant/orders/${orderId}/feedback`, data),
   getContracts: () => api.get('/tenant/contracts'),
   getMyContracts: () => api.get('/tenant/contracts'),
   createBookingOrder: (data) => api.post('/tenant/create-booking-order', data),

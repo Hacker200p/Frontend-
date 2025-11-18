@@ -6,6 +6,7 @@ const {
   getMyExpenses,
   addExpense,
   submitFeedback,
+  submitOrderFeedback,
   getMyContracts,
   createBookingOrder,
   bookRoom,
@@ -21,6 +22,7 @@ router.get('/hostels/:id', getHostelDetails);
 router.get('/expenses', getMyExpenses);
 router.post('/expenses', addExpense);
 router.post('/feedback', submitFeedback);
+router.post('/orders/:orderId/feedback', submitOrderFeedback);
 router.get('/contracts', getMyContracts);
 router.post('/create-booking-order', createBookingOrder);
 router.post('/book-room', bookRoom);

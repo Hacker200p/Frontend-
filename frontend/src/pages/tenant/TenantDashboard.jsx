@@ -55,6 +55,25 @@ export default function TenantDashboard() {
   const [myContracts, setMyContracts] = useState([])
   const [contractsLoading, setContractsLoading] = useState(false)
 
+  // Custom Order state
+  const [cart, setCart] = useState([]) // { menuItem: item, quantity: number }
+  const [showCartModal, setShowCartModal] = useState(false)
+  const [orderLoading, setOrderLoading] = useState(false)
+  const [myOrders, setMyOrders] = useState([])
+  const [ordersLoading, setOrdersLoading] = useState(false)
+  const [showOrdersModal, setShowOrdersModal] = useState(false)
+
+  // Feedback state
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false)
+  const [selectedOrderForFeedback, setSelectedOrderForFeedback] = useState(null)
+  const [feedbackRating, setFeedbackRating] = useState(0)
+  const [feedbackComment, setFeedbackComment] = useState('')
+  const [feedbackLoading, setFeedbackLoading] = useState(false)
+
+  // Video modal state
+  const [showVideoModal, setShowVideoModal] = useState(false)
+  const [currentVideoUrl, setCurrentVideoUrl] = useState('')
+
   useEffect(() => {
     // Check if user has any active contracts/bookings
     const checkUserBookingStatus = async () => {
@@ -127,6 +146,14 @@ export default function TenantDashboard() {
     if (activeTab === 'canteen') {
       fetchAvailableCanteens()
       fetchMySubscriptions()
+      fetchMyOrders()
+      
+      // Auto-refresh orders every 30 seconds when on canteen tab
+      const interval = setInterval(() => {
+        fetchMyOrders()
+      }, 30000)
+      
+      return () => clearInterval(interval)
     } else if (activeTab === 'contracts') {
       fetchMyContracts()
     }
@@ -348,6 +375,38 @@ export default function TenantDashboard() {
     navigate('/login')
   }
 
+  // Utility function to format address from various formats
+  const formatAddress = (addressData) => {
+    if (!addressData) return ''
+    
+    let address = addressData
+    
+    // Handle stringified object format like "{ street: 'unit 5', ... }"
+    if (typeof address === 'string' && address.includes('street:')) {
+      const streetMatch = address.match(/street:\s*'([^']*)'/)
+      const cityMatch = address.match(/city:\s*'([^']*)'/)
+      const stateMatch = address.match(/state:\s*'([^']*)'/)
+      const pincodeMatch = address.match(/pincode:\s*'([^']*)'/)
+      
+      const street = streetMatch ? streetMatch[1] : ''
+      const city = cityMatch ? cityMatch[1] : ''
+      const state = stateMatch ? stateMatch[1] : ''
+      const pincode = pincodeMatch ? pincodeMatch[1] : ''
+      
+      return `${street}, ${city}, ${state} - ${pincode}`
+        .replace(/,\s*,/g, ',').replace(/^,\s*|,\s*$/g, '').replace(/\s*-\s*$/, '').trim()
+    }
+    
+    // Handle actual object format
+    if (typeof address === 'object' && address !== null) {
+      return `${address.street || ''}, ${address.city || ''}, ${address.state || ''} - ${address.pincode || ''}`
+        .replace(/,\s*,/g, ',').replace(/^,\s*|,\s*$/g, '').replace(/\s*-\s*$/, '').trim()
+    }
+    
+    // Already a proper string
+    return address
+  }
+
   const fetchAvailableCanteens = async () => {
     setCanteensLoading(true)
     setCanteenError(null)
@@ -536,6 +595,189 @@ export default function TenantDashboard() {
       console.error('Error in subscription purchase:', error)
       setSubscriptionLoading(false)
       alert('Failed to process subscription: ' + (error.response?.data?.message || error.message))
+    }
+  }
+
+  // Cart Functions
+  const addToCart = (item) => {
+    const existingItem = cart.find(cartItem => cartItem.menuItem._id === item._id)
+    if (existingItem) {
+      setCart(cart.map(cartItem => 
+        cartItem.menuItem._id === item._id 
+          ? { ...cartItem, quantity: cartItem.quantity + 1 }
+          : cartItem
+      ))
+    } else {
+      setCart([...cart, { menuItem: item, quantity: 1 }])
+    }
+  }
+
+  const removeFromCart = (itemId) => {
+    setCart(cart.filter(cartItem => cartItem.menuItem._id !== itemId))
+  }
+
+  const updateQuantity = (itemId, newQuantity) => {
+    if (newQuantity <= 0) {
+      removeFromCart(itemId)
+    } else {
+      setCart(cart.map(cartItem => 
+        cartItem.menuItem._id === itemId 
+          ? { ...cartItem, quantity: newQuantity }
+          : cartItem
+      ))
+    }
+  }
+
+  const calculateCartTotal = () => {
+    const itemsTotal = cart.reduce((sum, item) => sum + (item.menuItem.price * item.quantity), 0)
+    const deliveryCharge = selectedCanteen?.deliveryCharge || 0
+    return { itemsTotal, deliveryCharge, total: itemsTotal + deliveryCharge }
+  }
+
+  const fetchMyOrders = async () => {
+    setOrdersLoading(true)
+    try {
+      const response = await canteenAPI.getMyOrders()
+      setMyOrders(response.data?.data || [])
+    } catch (error) {
+      console.error('Error fetching orders:', error)
+    } finally {
+      setOrdersLoading(false)
+    }
+  }
+
+  const placeOrder = async () => {
+    if (cart.length === 0) {
+      alert('Your cart is empty')
+      return
+    }
+
+    if (!selectedCanteen) {
+      alert('Please select a canteen first')
+      return
+    }
+
+    try {
+      setOrderLoading(true)
+
+      // Prepare order items
+      const items = cart.map(item => ({
+        menuItem: item.menuItem._id,
+        quantity: item.quantity
+      }))
+
+      // Create order
+      const orderResponse = await canteenAPI.createOrder({
+        canteen: selectedCanteen._id,
+        items,
+        specialInstructions: ''
+      })
+
+      const { razorpayOrderId, razorpayKeyId, amount, data: order } = orderResponse.data
+
+      if (!razorpayOrderId || !razorpayKeyId) {
+        throw new Error('Failed to create order - missing payment details')
+      }
+
+      // Initialize Razorpay
+      const options = {
+        key: razorpayKeyId,
+        amount: amount * 100,
+        currency: 'INR',
+        name: selectedCanteen.name,
+        description: 'Food Order',
+        order_id: razorpayOrderId,
+        handler: async (response) => {
+          try {
+            // Verify payment
+            const verifyResponse = await canteenAPI.verifyOrderPayment({
+              orderId: order._id,
+              razorpayPaymentId: response.razorpay_payment_id,
+              razorpaySignature: response.razorpay_signature
+            })
+
+            if (verifyResponse.data?.success) {
+              setOrderLoading(false)
+              alert('✓ Order placed successfully! Your food will be delivered soon.')
+              setCart([])
+              setShowCartModal(false)
+              await fetchMyOrders()
+            } else {
+              throw new Error(verifyResponse.data?.message || 'Payment verification failed')
+            }
+          } catch (error) {
+            console.error('Payment verification error:', error)
+            setOrderLoading(false)
+            alert('❌ Payment verification failed:\n\n' + (error.response?.data?.message || error.message))
+          }
+        },
+        modal: {
+          ondismiss: () => {
+            setOrderLoading(false)
+          }
+        },
+        prefill: {
+          name: user?.name,
+          email: user?.email,
+          contact: user?.phone
+        },
+        theme: {
+          color: '#10b981'
+        }
+      }
+
+      const rzp = new window.Razorpay(options)
+      rzp.on('payment.failed', (response) => {
+        console.error('Payment failed:', response)
+        setOrderLoading(false)
+        alert('Payment failed: ' + response.error.description)
+      })
+      rzp.open()
+    } catch (error) {
+      console.error('Error placing order:', error)
+      setOrderLoading(false)
+      alert('Failed to place order: ' + (error.response?.data?.message || error.message))
+    }
+  }
+
+  const openFeedbackModal = (order) => {
+    setSelectedOrderForFeedback(order)
+    setFeedbackRating(0)
+    setFeedbackComment('')
+    setShowFeedbackModal(true)
+  }
+
+  const submitOrderFeedback = async () => {
+    if (feedbackRating === 0) {
+      alert('Please provide a rating')
+      return
+    }
+
+    if (!feedbackComment.trim()) {
+      alert('Please provide a comment')
+      return
+    }
+
+    try {
+      setFeedbackLoading(true)
+      await tenantAPI.submitOrderFeedback(selectedOrderForFeedback._id, {
+        rating: feedbackRating,
+        comment: feedbackComment.trim()
+      })
+
+      alert('✓ Feedback submitted successfully!')
+      setShowFeedbackModal(false)
+      setSelectedOrderForFeedback(null)
+      setFeedbackRating(0)
+      setFeedbackComment('')
+      
+      // Refresh orders to update feedback status
+      await fetchMyOrders()
+    } catch (error) {
+      console.error('Error submitting feedback:', error)
+      alert('Failed to submit feedback: ' + (error.response?.data?.message || error.message))
+    } finally {
+      setFeedbackLoading(false)
     }
   }
 
@@ -1312,11 +1554,71 @@ export default function TenantDashboard() {
                             {/* Room Image */}
                             <div className="relative h-40 bg-gray-100">
                               {room.photos && room.photos.length > 0 ? (
-                                <img
-                                  src={room.photos[0].url || room.photos[0]}
-                                  alt={`Room ${room.roomNumber}`}
-                                  className="w-full h-full object-cover"
-                                />
+                                <>
+                                  <img
+                                    src={room.photos[0].url || room.photos[0]}
+                                    alt={`Room ${room.roomNumber}`}
+                                    className="w-full h-full object-cover"
+                                  />
+                                  {/* Media Indicators */}
+                                  <div className="absolute bottom-2 left-2 flex gap-2">
+                                    {room.photos.length > 0 && (
+                                      <span className="bg-green-500 text-white text-xs px-2 py-1 rounded">
+                                        📷 {room.photos.length}
+                                      </span>
+                                    )}
+                                    {room.videoUrl && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          setCurrentVideoUrl(room.videoUrl)
+                                          setShowVideoModal(true)
+                                        }}
+                                        className="bg-blue-500 hover:bg-blue-600 text-white text-xs px-2 py-1 rounded transition cursor-pointer"
+                                      >
+                                        🎥 Video
+                                      </button>
+                                    )}
+                                    {room.view360Url && (
+                                      <span className="bg-purple-500 text-white text-xs px-2 py-1 rounded">
+                                        🌐 360°
+                                      </span>
+                                    )}
+                                  </div>
+                                </>
+                              ) : room.videoUrl ? (
+                                <div 
+                                  className="relative w-full h-full cursor-pointer group"
+                                  onClick={() => {
+                                    setCurrentVideoUrl(room.videoUrl)
+                                    setShowVideoModal(true)
+                                  }}
+                                >
+                                  <video 
+                                    src={room.videoUrl} 
+                                    className="w-full h-full object-cover"
+                                    muted
+                                  />
+                                  <div className="absolute inset-0 bg-black/40 group-hover:bg-black/50 transition flex items-center justify-center">
+                                    <div className="bg-white rounded-full p-3 group-hover:scale-110 transition">
+                                      <svg className="w-8 h-8 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                                        <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z"/>
+                                      </svg>
+                                    </div>
+                                  </div>
+                                  <div className="absolute bottom-2 left-2">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        setCurrentVideoUrl(room.videoUrl)
+                                        setShowVideoModal(true)
+                                      }}
+                                      className="bg-blue-500 hover:bg-blue-600 text-white text-xs px-2 py-1 rounded transition cursor-pointer"
+                                    >
+                                      🎥 Video
+                                    </button>
+                                  </div>
+                                </div>
                               ) : (
                                 <div className="w-full h-full flex items-center justify-center text-gray-400">
                                   <span className="text-5xl">🛏️</span>
@@ -1439,6 +1741,29 @@ export default function TenantDashboard() {
 
           {activeTab === 'canteen' && (
             <div className="space-y-6">
+              {/* Cart and Orders Header */}
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setShowOrdersModal(true)}
+                  className="bg-blue-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-600 transition flex items-center gap-2"
+                >
+                  <span className="text-lg">📋</span>
+                  My Orders
+                </button>
+                <button
+                  onClick={() => setShowCartModal(true)}
+                  className="bg-primary text-white px-4 py-2 rounded-lg font-semibold hover:bg-primary/90 transition flex items-center gap-2 relative"
+                >
+                  <span className="text-lg">🛒</span>
+                  Cart
+                  {cart.length > 0 && (
+                    <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-6 h-6 flex items-center justify-center font-bold">
+                      {cart.reduce((sum, item) => sum + item.quantity, 0)}
+                    </span>
+                  )}
+                </button>
+              </div>
+
               {/* Booking Status Info */}
               {myBooking && (
                 <div className="bg-gradient-to-r from-blue-50 to-purple-50 border-2 border-blue-200 rounded-xl p-4">
@@ -1661,14 +1986,48 @@ export default function TenantDashboard() {
                               </span>
                             </div>
                             <p className="text-sm text-text-muted mb-3">{item.description}</p>
-                            <div className="flex items-center justify-between">
+                            <div className="flex items-center justify-between mb-3">
                               <span className="text-2xl font-bold text-primary">₹{item.price}</span>
                               <span className="text-xs text-text-muted">⏱️ {item.preparationTime || 20} min</span>
                             </div>
+                            <button
+                              onClick={() => addToCart(item)}
+                              className="w-full bg-primary text-white py-2 rounded-lg font-semibold hover:bg-primary/90 transition"
+                            >
+                              Add to Cart
+                            </button>
                           </div>
                         </div>
                       ))}
                   </div>
+
+                  {/* Quick Actions Below Menu */}
+                  {canteenMenu.filter(item => menuCategory === 'all' || item.category === menuCategory).length > 0 && (
+                    <div className="flex justify-center gap-4 mt-8">
+                      <button
+                        onClick={() => setShowCartModal(true)}
+                        className="bg-primary text-white px-8 py-3 rounded-xl font-bold hover:bg-primary/90 transition shadow-lg hover:shadow-xl flex items-center gap-3 relative"
+                      >
+                        <span className="text-2xl">🛒</span>
+                        <span>View Cart</span>
+                        {cart.length > 0 && (
+                          <span className="absolute -top-2 -right-2 bg-red-500 text-white text-sm rounded-full w-7 h-7 flex items-center justify-center font-bold">
+                            {cart.reduce((sum, item) => sum + item.quantity, 0)}
+                          </span>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => {
+                          fetchMyOrders()
+                          setShowOrdersModal(true)
+                        }}
+                        className="bg-blue-500 text-white px-8 py-3 rounded-xl font-bold hover:bg-blue-600 transition shadow-lg hover:shadow-xl flex items-center gap-3"
+                      >
+                        <span className="text-2xl">📋</span>
+                        <span>My Orders</span>
+                      </button>
+                    </div>
+                  )}
 
                   {canteenMenu.filter(item => menuCategory === 'all' || item.category === menuCategory).length === 0 && (
                     <div className="text-center py-12">
@@ -2411,6 +2770,441 @@ export default function TenantDashboard() {
             <p className="text-xs text-gray-500 text-center mt-4">
               🔒 Secure payment via Razorpay | You can cancel anytime
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Cart Modal */}
+      {showCartModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={() => setShowCartModal(false)}>
+          <div className="bg-white rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h3 className="text-3xl font-bold text-text-dark">🛒 Your Cart</h3>
+                <p className="text-sm text-gray-600 mt-1">{cart.length} items</p>
+              </div>
+              <button
+                onClick={() => setShowCartModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            {cart.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="text-6xl mb-4">🛒</div>
+                <p className="text-text-muted text-lg">Your cart is empty</p>
+                <p className="text-sm text-gray-500 mt-2">Add items from the menu to place an order</p>
+              </div>
+            ) : (
+              <>
+                {/* Cart Items */}
+                <div className="space-y-4 mb-6">
+                  {cart.map(item => (
+                    <div key={item.menuItem._id} className="flex items-center gap-4 p-4 border rounded-lg">
+                      {item.menuItem.image?.url ? (
+                        <img src={item.menuItem.image.url} alt={item.menuItem.name} className="w-20 h-20 object-cover rounded-lg" />
+                      ) : (
+                        <div className="w-20 h-20 bg-gradient-to-br from-purple-100 to-blue-100 rounded-lg flex items-center justify-center text-3xl">
+                          🍽️
+                        </div>
+                      )}
+                      <div className="flex-1">
+                        <h4 className="font-bold text-text-dark">{item.menuItem.name}</h4>
+                        <p className="text-sm text-text-muted">{item.menuItem.category}</p>
+                        <p className="text-lg font-bold text-primary mt-1">₹{item.menuItem.price}</p>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => updateQuantity(item.menuItem._id, item.quantity - 1)}
+                          className="w-8 h-8 rounded-full bg-gray-200 hover:bg-gray-300 flex items-center justify-center font-bold"
+                        >
+                          −
+                        </button>
+                        <span className="font-bold text-lg w-8 text-center">{item.quantity}</span>
+                        <button
+                          onClick={() => updateQuantity(item.menuItem._id, item.quantity + 1)}
+                          className="w-8 h-8 rounded-full bg-primary text-white hover:bg-primary/90 flex items-center justify-center font-bold"
+                        >
+                          +
+                        </button>
+                      </div>
+                      <button
+                        onClick={() => removeFromCart(item.menuItem._id)}
+                        className="text-red-500 hover:text-red-700 text-xl"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Price Summary */}
+                <div className="border-t pt-4 space-y-2">
+                  <div className="flex justify-between text-text-dark">
+                    <span>Items Total</span>
+                    <span className="font-semibold">₹{calculateCartTotal().itemsTotal}</span>
+                  </div>
+                  <div className="flex justify-between text-text-dark">
+                    <span>Delivery Charge</span>
+                    <span className="font-semibold">₹{calculateCartTotal().deliveryCharge}</span>
+                  </div>
+                  <div className="flex justify-between text-xl font-bold text-primary border-t pt-2">
+                    <span>Total</span>
+                    <span>₹{calculateCartTotal().total}</span>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-3 mt-6">
+                  <button
+                    onClick={() => setShowCartModal(false)}
+                    className="flex-1 px-6 py-3 rounded-xl border-2 border-gray-300 font-bold text-gray-700 hover:border-gray-400 hover:bg-gray-50 transition"
+                  >
+                    Continue Shopping
+                  </button>
+                  <button
+                    onClick={placeOrder}
+                    className="flex-1 px-6 py-3 rounded-xl bg-gradient-to-r from-green-500 to-green-600 text-white font-bold hover:shadow-lg transition disabled:opacity-50"
+                    disabled={orderLoading}
+                  >
+                    {orderLoading ? (
+                      <>
+                        <span className="inline-block animate-spin mr-2">⟳</span>
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        💳 Place Order - ₹{calculateCartTotal().total}
+                      </>
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Orders Modal */}
+      {showOrdersModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={() => setShowOrdersModal(false)}>
+          <div className="bg-white rounded-2xl p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h3 className="text-3xl font-bold text-text-dark">📋 My Orders</h3>
+                <p className="text-sm text-gray-600 mt-1">Track your food orders</p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowOrdersModal(false)
+                  fetchMyOrders()
+                }}
+                className="text-gray-400 hover:text-gray-600 transition text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            {ordersLoading ? (
+              <div className="text-center py-12">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+                <p className="text-text-muted">Loading orders...</p>
+              </div>
+            ) : myOrders.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="text-6xl mb-4">📋</div>
+                <p className="text-text-muted text-lg">No orders yet</p>
+                <p className="text-sm text-gray-500 mt-2">Your order history will appear here</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {myOrders.map(order => (
+                  <div key={order._id} className="border rounded-xl p-4 hover:shadow-lg transition">
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-text-dark">Order #{order.orderNumber}</h4>
+                          <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                            order.orderStatus === 'delivered' ? 'bg-green-100 text-green-700' :
+                            order.orderStatus === 'cancelled' ? 'bg-red-100 text-red-700' :
+                            order.orderStatus === 'ready' ? 'bg-blue-100 text-blue-700' :
+                            order.orderStatus === 'preparing' ? 'bg-yellow-100 text-yellow-700' :
+                            'bg-gray-100 text-gray-700'
+                          }`}>
+                            {order.orderStatus}
+                          </span>
+                        </div>
+                        <p className="text-sm text-text-muted mt-1">
+                          {new Date(order.createdAt).toLocaleDateString('en-IN', { 
+                            day: 'numeric', 
+                            month: 'short', 
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-2xl font-bold text-primary">₹{order.totalAmount}</p>
+                        <span className={`text-xs px-2 py-1 rounded-full ${
+                          order.paymentStatus === 'paid' ? 'bg-green-100 text-green-700' :
+                          order.paymentStatus === 'failed' ? 'bg-red-100 text-red-700' :
+                          'bg-yellow-100 text-yellow-700'
+                        }`}>
+                          {order.paymentStatus}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Order Items */}
+                    <div className="bg-gray-50 rounded-lg p-3 mb-3">
+                      <p className="text-xs font-semibold text-text-dark mb-2">Items:</p>
+                      <div className="space-y-1">
+                        {order.items.map((item, idx) => (
+                          <div key={idx} className="flex justify-between text-sm">
+                            <span className="text-text-dark">{item.name} x{item.quantity}</span>
+                            <span className="font-semibold">₹{item.price * item.quantity}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Estimated Delivery Time */}
+                    {order.estimatedDeliveryTime && order.orderStatus !== 'delivered' && order.orderStatus !== 'cancelled' && (
+                      <div className="bg-green-50 border-l-4 border-green-500 rounded p-3 mb-3">
+                        <p className="text-xs font-semibold text-green-900 mb-1">⏰ Estimated Delivery Time</p>
+                        <p className="text-sm text-green-800 font-bold">
+                          {new Date(order.estimatedDeliveryTime).toLocaleTimeString('en-IN', { 
+                            hour: '2-digit', 
+                            minute: '2-digit' 
+                          })}
+                        </p>
+                        <p className="text-xs text-green-700 mt-1">
+                          {Math.max(0, Math.round((new Date(order.estimatedDeliveryTime) - new Date()) / 60000))} minutes remaining
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Order Status Progress */}
+                    {order.orderStatus !== 'cancelled' && (
+                      <div className="bg-blue-50 rounded-lg p-3 mb-3">
+                        <p className="text-xs font-semibold text-blue-900 mb-2">📦 Order Progress</p>
+                        <div className="flex items-center justify-between text-xs">
+                          <div className={`flex flex-col items-center ${['pending', 'confirmed', 'preparing', 'ready', 'delivered'].includes(order.orderStatus) ? 'text-green-600' : 'text-gray-400'}`}>
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center mb-1 ${['pending', 'confirmed', 'preparing', 'ready', 'delivered'].includes(order.orderStatus) ? 'bg-green-500 text-white' : 'bg-gray-300'}`}>
+                              ✓
+                            </div>
+                            <span className="font-medium">Confirmed</span>
+                          </div>
+                          <div className={`flex-1 h-1 mx-1 ${['preparing', 'ready', 'delivered'].includes(order.orderStatus) ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                          <div className={`flex flex-col items-center ${['preparing', 'ready', 'delivered'].includes(order.orderStatus) ? 'text-green-600' : 'text-gray-400'}`}>
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center mb-1 ${['preparing', 'ready', 'delivered'].includes(order.orderStatus) ? 'bg-green-500 text-white' : 'bg-gray-300'}`}>
+                              👨‍🍳
+                            </div>
+                            <span className="font-medium">Preparing</span>
+                          </div>
+                          <div className={`flex-1 h-1 mx-1 ${['ready', 'delivered'].includes(order.orderStatus) ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                          <div className={`flex flex-col items-center ${['ready', 'delivered'].includes(order.orderStatus) ? 'text-green-600' : 'text-gray-400'}`}>
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center mb-1 ${['ready', 'delivered'].includes(order.orderStatus) ? 'bg-green-500 text-white' : 'bg-gray-300'}`}>
+                              ✓
+                            </div>
+                            <span className="font-medium">Ready</span>
+                          </div>
+                          <div className={`flex-1 h-1 mx-1 ${order.orderStatus === 'delivered' ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                          <div className={`flex flex-col items-center ${order.orderStatus === 'delivered' ? 'text-green-600' : 'text-gray-400'}`}>
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center mb-1 ${order.orderStatus === 'delivered' ? 'bg-green-500 text-white' : 'bg-gray-300'}`}>
+                              🚚
+                            </div>
+                            <span className="font-medium">Delivered</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Delivery Address */}
+                    {order.deliveryAddress && (
+                      <div className="text-sm text-text-muted">
+                        <span className="font-semibold">📍 Delivery to:</span> Room {order.deliveryAddress.roomNumber}, 
+                        Floor {order.deliveryAddress.floor}, {order.deliveryAddress.hostelName}
+                      </div>
+                    )}
+
+                    {order.specialInstructions && (
+                      <div className="text-sm text-text-muted mt-2">
+                        <span className="font-semibold">📝 Instructions:</span> {order.specialInstructions}
+                      </div>
+                    )}
+
+                    {order.orderStatus === 'delivered' && order.deliveredAt && (
+                      <div className="text-sm text-green-600 font-semibold mt-2">
+                        ✓ Delivered on {new Date(order.deliveredAt).toLocaleString('en-IN')}
+                      </div>
+                    )}
+
+                    {/* Feedback Button for Delivered Orders */}
+                    {order.orderStatus === 'delivered' && (
+                      <div className="mt-3 pt-3 border-t border-gray-200">
+                        {order.feedback ? (
+                          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 text-center">
+                            <span className="text-sm text-yellow-800">⭐ Feedback submitted</span>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => openFeedbackModal(order)}
+                            className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 text-white py-2 px-4 rounded-lg hover:from-yellow-600 hover:to-orange-600 transition-all font-semibold text-sm flex items-center justify-center gap-2"
+                          >
+                            ⭐ Rate Your Order
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Feedback Modal */}
+      {showFeedbackModal && selectedOrderForFeedback && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-gradient-to-r from-yellow-500 to-orange-500 text-white p-6 rounded-t-2xl">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-2xl font-bold">⭐ Rate Your Order</h2>
+                  <p className="text-sm text-white/90 mt-1">Order #{selectedOrderForFeedback.orderNumber}</p>
+                </div>
+                <button
+                  onClick={() => setShowFeedbackModal(false)}
+                  className="text-white hover:bg-white/20 rounded-full p-2 transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Order Summary */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-sm font-semibold text-text-dark mb-2">Order from {selectedOrderForFeedback.canteen?.name}</p>
+                <div className="space-y-1">
+                  {selectedOrderForFeedback.items.map((item, idx) => (
+                    <div key={idx} className="text-xs text-text-muted flex justify-between">
+                      <span>{item.name} x{item.quantity}</span>
+                      <span>₹{item.price * item.quantity}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="text-sm font-bold text-text-dark mt-2 pt-2 border-t border-gray-200">
+                  Total: ₹{selectedOrderForFeedback.totalAmount}
+                </div>
+              </div>
+
+              {/* Rating Stars */}
+              <div>
+                <label className="block text-sm font-semibold text-text-dark mb-3">
+                  How would you rate your order? <span className="text-red-500">*</span>
+                </label>
+                <div className="flex justify-center gap-3">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      onClick={() => setFeedbackRating(star)}
+                      className={`text-5xl transition-all transform hover:scale-110 ${
+                        feedbackRating >= star 
+                          ? 'text-yellow-500' 
+                          : 'text-gray-300 hover:text-yellow-400'
+                      }`}
+                    >
+                      ★
+                    </button>
+                  ))}
+                </div>
+                {feedbackRating > 0 && (
+                  <p className="text-center text-sm text-text-muted mt-2">
+                    {feedbackRating === 1 && '😞 Poor'}
+                    {feedbackRating === 2 && '😐 Fair'}
+                    {feedbackRating === 3 && '🙂 Good'}
+                    {feedbackRating === 4 && '😊 Very Good'}
+                    {feedbackRating === 5 && '🤩 Excellent'}
+                  </p>
+                )}
+              </div>
+
+              {/* Comment */}
+              <div>
+                <label className="block text-sm font-semibold text-text-dark mb-2">
+                  Share your experience <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={feedbackComment}
+                  onChange={(e) => setFeedbackComment(e.target.value)}
+                  placeholder="Tell us about the food quality, delivery speed, packaging, etc..."
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-transparent resize-none"
+                  rows="5"
+                />
+                <p className="text-xs text-text-muted mt-1">
+                  {feedbackComment.length}/500 characters
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowFeedbackModal(false)}
+                  className="flex-1 px-6 py-3 border-2 border-gray-300 text-text-dark rounded-lg hover:bg-gray-50 transition-colors font-semibold"
+                  disabled={feedbackLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={submitOrderFeedback}
+                  disabled={feedbackLoading || feedbackRating === 0 || !feedbackComment.trim()}
+                  className="flex-1 bg-gradient-to-r from-yellow-500 to-orange-500 text-white px-6 py-3 rounded-lg hover:from-yellow-600 hover:to-orange-600 transition-all font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {feedbackLoading ? 'Submitting...' : '✓ Submit Feedback'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Video Modal */}
+      {showVideoModal && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowVideoModal(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-gradient-to-r from-primary to-blue-600 text-white p-4 flex justify-between items-center">
+              <h3 className="text-xl font-bold flex items-center gap-2">
+                🎥 Room Video
+              </h3>
+              <button
+                onClick={() => setShowVideoModal(false)}
+                className="text-white hover:bg-white/20 rounded-full p-2 transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+            <div className="p-4 bg-black">
+              <video
+                src={currentVideoUrl}
+                controls
+                autoPlay
+                className="w-full max-h-[70vh] rounded-lg"
+              >
+                Your browser does not support the video tag.
+              </video>
+            </div>
           </div>
         </div>
       )}

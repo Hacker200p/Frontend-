@@ -21,6 +21,7 @@ const {
   getCanteenSubscriptions,
   cancelSubscription,
   getAvailableCanteens,
+  getCanteenFeedbacks,
 } = require('../controllers/canteenController');
 const { protect } = require('../middleware/authMiddleware');
 const { authorize } = require('../middleware/roleMiddleware');
@@ -38,6 +39,7 @@ router.delete('/menu/:id', protect, authorize('canteen_provider'), deleteMenuIte
 router.delete('/:id', protect, authorize('canteen_provider'), deleteCanteen);
 router.get('/orders', protect, authorize('canteen_provider'), getProviderOrders);
 router.put('/orders/:id/status', protect, authorize('canteen_provider'), updateOrderStatus);
+router.get('/:id/feedbacks', protect, authorize('canteen_provider'), getCanteenFeedbacks);
 
 // Public/Tenant routes
 router.get('/available', protect, authorize('tenant'), getAvailableCanteens);

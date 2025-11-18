@@ -64,6 +64,10 @@ const orderSchema = new mongoose.Schema({
   specialInstructions: String,
   estimatedDeliveryTime: Date,
   deliveredAt: Date,
+  feedback: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Feedback',
+  },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Order', orderSchema);
