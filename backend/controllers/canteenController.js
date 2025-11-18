@@ -33,11 +33,6 @@ const createCanteen = async (req, res) => {
 
     const canteen = await Canteen.create(canteenData);
 
-    // Update hostel to reference this canteen
-    hostelData.canteen = canteen._id;
-    hostelData.hasCanteen = true;
-    await hostelData.save();
-
     req.user.canteens.push(canteen._id);
     await req.user.save();
 
@@ -97,7 +92,6 @@ const getAvailableHostels = async (req, res) => {
 // @access  Private/CanteenProvider
 const deleteCanteen = async (req, res) => {
   try {
-    const Hostel = require('../models/Hostel');
     const canteen = await Canteen.findById(req.params.id);
 
     if (!canteen) {
@@ -110,12 +104,6 @@ const deleteCanteen = async (req, res) => {
 
     // Delete all menu items associated with this canteen
     await MenuItem.deleteMany({ canteen: canteen._id });
-
-    // Update hostel to remove canteen reference
-    await Hostel.findByIdAndUpdate(canteen.hostel, {
-      canteen: null,
-      hasCanteen: false
-    });
 
     // Delete the canteen
     await Canteen.findByIdAndDelete(req.params.id);
@@ -467,32 +455,11 @@ const getProviderOrders = async (req, res) => {
     if (status) query.orderStatus = status;
 
     const orders = await Order.find(query)
-      .populate('tenant', 'name phone email currentHostel currentRoom')
+      .populate('tenant', 'name phone')
       .populate('canteen', 'name')
       .sort({ createdAt: -1 });
 
-    // Enhance orders with hostel and room details
-    const enhancedOrders = await Promise.all(orders.map(async (order) => {
-      const orderObj = order.toObject();
-      
-      if (order.tenant?.currentHostel) {
-        const Hostel = require('../models/Hostel');
-        const Room = require('../models/Room');
-        
-        const hostel = await Hostel.findById(order.tenant.currentHostel).select('name address');
-        const room = await Room.findById(order.tenant.currentRoom).select('roomNumber floor');
-        
-        orderObj.tenant = {
-          ...orderObj.tenant,
-          hostel: hostel ? { name: hostel.name, address: hostel.address } : null,
-          room: room ? { roomNumber: room.roomNumber, floor: room.floor } : null,
-        };
-      }
-      
-      return orderObj;
-    }));
-
-    res.json({ success: true, data: enhancedOrders });
+    res.json({ success: true, data: orders });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -819,7 +786,7 @@ const getCanteenSubscriptions = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
 
-    const subscriptions = await Subscription.find({ canteen: req.params.id, status: 'active' })
+    const subscriptions = await Subscription.find({ canteen: req.params.id })
       .populate('tenant', 'name phone email')
       .populate('deliveryLocation.hostel', 'name address city')
       .sort({ createdAt: -1 });

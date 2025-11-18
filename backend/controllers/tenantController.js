@@ -24,7 +24,6 @@ const searchHostels = async (req, res) => {
 
     let hostels = await Hostel.find(query)
       .populate('owner', 'name phone')
-      .populate('canteen', 'name deliveryCharge subscriptionPlans')
       .limit(limit * 1)
       .skip((page - 1) * limit)
       .sort({ rating: -1 });
@@ -34,7 +33,6 @@ const searchHostels = async (req, res) => {
       console.log('No verified hostels found, fetching all hostels...');
       hostels = await Hostel.find({})
         .populate('owner', 'name phone')
-        .populate('canteen', 'name deliveryCharge subscriptionPlans')
         .limit(limit * 1)
         .skip((page - 1) * limit)
         .sort({ rating: -1 });
@@ -82,47 +80,16 @@ const getHostelDetails = async (req, res) => {
 // @access  Private/Tenant
 const getMyExpenses = async (req, res) => {
   try {
-    console.log('📋 Fetching expenses for tenant:', req.user.id)
-    
-    const { year, month, type, status } = req.query;
+    const { year, month } = req.query;
     const query = { tenant: req.user.id };
 
     if (year) query.year = parseInt(year);
     if (month) query.month = parseInt(month);
-    if (type) query.type = type;
-    if (status) query.status = status;
 
-    // Fetch both new format and old format expenses
-    const expenses = await Expense.find(query)
-      .populate('tenant', 'name email phone')
-      .sort({ createdAt: -1, dueDate: -1 });
+    const expenses = await Expense.find(query).sort({ year: -1, month: -1 });
 
-    console.log('✓ Found', expenses.length, 'expenses for tenant')
-
-    // Transform old format to new format for backward compatibility
-    const transformedExpenses = expenses.map(exp => {
-      if (exp.type) {
-        // Already in new format
-        return exp.toObject();
-      } else {
-        // Old format - transform it
-        return {
-          _id: exp._id,
-          tenant: exp.tenant,
-          type: 'other',
-          name: `Monthly Expenses - ${exp.month}/${exp.year}`,
-          description: exp.notes || 'Monthly expenses',
-          amount: exp.totalExpense || 0,
-          status: 'paid', // Old expenses are considered paid
-          dueDate: new Date(exp.year, exp.month - 1, 1),
-          createdAt: exp.createdAt,
-        };
-      }
-    });
-
-    res.json({ success: true, data: transformedExpenses });
+    res.json({ success: true, data: expenses });
   } catch (error) {
-    console.error('❌ Error fetching expenses:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -440,168 +407,6 @@ const bookRoom = async (req, res) => {
   }
 };
 
-// @desc    Create payment order for expenses
-// @route   POST /api/tenant/create-expense-order
-// @access  Private/Tenant
-const createExpenseOrder = async (req, res) => {
-  try {
-    const { expenseIds, amount } = req.body;
-
-    console.log('📝 Creating expense order - expenseIds:', expenseIds, 'amount:', amount)
-
-    if (!expenseIds || !Array.isArray(expenseIds) || expenseIds.length === 0) {
-      console.warn('⚠️ Invalid expenseIds:', expenseIds)
-      return res.status(400).json({ success: false, message: 'Expense IDs are required' });
-    }
-
-    if (!amount || amount <= 0) {
-      console.warn('⚠️ Invalid amount:', amount)
-      return res.status(400).json({ success: false, message: 'Valid amount is required' });
-    }
-
-    // Check if Razorpay is configured
-    const razorpay = require('../config/razorypay');
-    if (!razorpay) {
-      console.log('ℹ️ Razorpay not configured, returning test order')
-      // If Razorpay not configured, return test order
-      return res.status(200).json({
-        success: true,
-        testMode: true,
-        order: {
-          id: `test_expense_order_${Date.now()}`,
-          amount: amount,
-          currency: 'INR',
-          expenseIds: expenseIds
-        },
-        razorpayKeyId: 'test_key',
-        message: 'Test mode - Razorpay not configured'
-      });
-    }
-
-    const options = {
-      amount: Math.round(amount * 100), // amount in paise
-      currency: 'INR',
-      receipt: `EXP_${Date.now().toString().slice(-10)}`,
-      notes: {
-        expenseIds: expenseIds.join(','),
-        tenantId: req.user.id,
-        type: 'expense_payment'
-      }
-    };
-
-    console.log('📡 Calling Razorpay.orders.create with options:', options)
-    const order = await razorpay.orders.create(options);
-
-    console.log('✓ Razorpay expense order created:', order.id);
-
-    res.status(200).json({
-      success: true,
-      order: {
-        id: order.id,
-        amount: amount,
-        currency: 'INR',
-        expenseIds: expenseIds
-      },
-      razorpayKeyId: process.env.RAZORPAY_KEY_ID
-    });
-  } catch (error) {
-    console.error('❌ Create expense order error:', error);
-    console.error('Error details:', {
-      message: error.message,
-      statusCode: error.statusCode,
-      code: error.code,
-      stack: error.stack
-    });
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to create payment order',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-};
-
-// @desc    Verify and process expense payment
-// @route   POST /api/tenant/verify-expense-payment
-// @access  Private/Tenant
-const verifyExpensePayment = async (req, res) => {
-  try {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, expenseIds } = req.body;
-
-    console.log('💳 Verifying expense payment...')
-    console.log('Payment ID:', razorpay_payment_id)
-    console.log('Expense IDs:', expenseIds)
-
-    if (!razorpay_order_id || !razorpay_payment_id || !expenseIds) {
-      console.warn('⚠️ Missing payment details')
-      return res.status(400).json({ success: false, message: 'Missing payment details' });
-    }
-
-    // Skip verification for test mode
-    if (!razorpay_order_id.startsWith('test_expense_order_')) {
-      const crypto = require('crypto');
-      const sign = razorpay_order_id + '|' + razorpay_payment_id;
-      const expectedSign = crypto
-        .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
-        .update(sign.toString())
-        .digest('hex');
-
-      if (razorpay_signature !== expectedSign) {
-        console.warn('⚠️ Invalid payment signature')
-        return res.status(400).json({ success: false, message: 'Invalid payment signature' });
-      }
-    }
-
-    console.log('✓ Signature verified')
-
-    // Mark expenses as paid in database
-    const expenseArray = Array.isArray(expenseIds) ? expenseIds : expenseIds.split(',');
-    
-    console.log('📝 Updating expenses to paid status...')
-    
-    // Update all expenses with matching IDs for this tenant
-    const updateResult = await Expense.updateMany(
-      {
-        _id: { $in: expenseArray },
-        tenant: req.user.id
-      },
-      {
-        status: 'paid',
-        paidDate: new Date(),
-        paymentId: razorpay_payment_id,
-        orderId: razorpay_order_id
-      }
-    );
-
-    console.log('✓ Updated', updateResult.modifiedCount, 'expenses')
-    
-    // Fetch updated expenses to return
-    const updatedExpenses = await Expense.find({
-      _id: { $in: expenseArray },
-      tenant: req.user.id
-    });
-
-    console.log('✓ Payment verified and expenses updated')
-    
-    res.status(200).json({
-      success: true,
-      message: 'Payment verified successfully',
-      data: {
-        orderId: razorpay_order_id,
-        paymentId: razorpay_payment_id,
-        expenseIds: expenseArray,
-        status: 'paid',
-        updatedExpenses: updatedExpenses
-      }
-    });
-  } catch (error) {
-    console.error('❌ Verify expense payment error:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message || 'Failed to verify payment'
-    });
-  }
-};
-
 module.exports = {
   searchHostels,
   getHostelDetails,
@@ -611,6 +416,4 @@ module.exports = {
   getMyContracts,
   createBookingOrder,
   bookRoom,
-  createExpenseOrder,
-  verifyExpensePayment,
 };

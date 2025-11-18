@@ -6,38 +6,15 @@ const expenseSchema = new mongoose.Schema({
     ref: 'User',
     required: true,
   },
-  type: {
-    type: String,
-    enum: ['hostel', 'canteen', 'other'],
-    required: true,
-  },
-  name: {
-    type: String,
-    required: true,
-  },
-  description: String,
-  amount: {
-    type: Number,
-    required: true,
-  },
-  status: {
-    type: String,
-    enum: ['pending', 'paid', 'overdue'],
-    default: 'pending',
-  },
-  dueDate: Date,
-  paidDate: Date,
-  paymentId: String, // Razorpay payment ID
-  orderId: String, // Razorpay order ID
-  
-  // Old fields (kept for backward compatibility)
   month: {
     type: Number,
+    required: true,
     min: 1,
     max: 12,
   },
   year: {
     type: Number,
+    required: true,
   },
   rent: {
     type: Number,
@@ -70,8 +47,6 @@ const expenseSchema = new mongoose.Schema({
   notes: String,
 }, { timestamps: true });
 
-expenseSchema.index({ tenant: 1, type: 1 });
-expenseSchema.index({ tenant: 1, status: 1 });
-expenseSchema.index({ tenant: 1, createdAt: -1 });
+expenseSchema.index({ tenant: 1, month: 1, year: 1 }, { unique: true });
 
 module.exports = mongoose.model('Expense', expenseSchema);

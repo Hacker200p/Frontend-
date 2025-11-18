@@ -55,98 +55,23 @@ export default function TenantDashboard() {
   const [myContracts, setMyContracts] = useState([])
   const [contractsLoading, setContractsLoading] = useState(false)
 
-  // Canteen subscription state
-  const [canteens, setCanteens] = useState([])
-  const [mySubscriptions, setMySubscriptions] = useState([])
-  const [selectedCanteen, setSelectedCanteen] = useState(null)
-  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false)
-  const [subscriptionData, setSubscriptionData] = useState({
-    plan: 'breakfast',
-    duration: 1
-  })
-  const [subscriptionLoading, setSubscriptionLoading] = useState(false)
-
-  // Contracts state
-  const [contracts, setContracts] = useState([])
-  const [contractsLoading, setContractsLoading] = useState(false)
-  const [selectedContractForDetails, setSelectedContractForDetails] = useState(null)
-  const [contractToTerminate, setContractToTerminate] = useState(null)
-  const [terminationSuccess, setTerminationSuccess] = useState(false)
-  const [terminationError, setTerminationError] = useState(null)
-
-  // Expenses state
-  const [expenses, setExpenses] = useState([])
-  const [expensesLoading, setExpensesLoading] = useState(false)
-  const [selectedExpensesForPayment, setSelectedExpensesForPayment] = useState([])
-  const [paymentLoading, setPaymentLoading] = useState(false)
-  const [paymentSuccess, setPaymentSuccess] = useState(false)
-
-  // Menu & Orders state
-  const [canteenMenuItems, setCanteenMenuItems] = useState({}) // keyed by canteenId
-  const [menuLoadingCanteenId, setMenuLoadingCanteenId] = useState(null)
-  const [myOrders, setMyOrders] = useState([])
-  const [myOrdersLoading, setMyOrdersLoading] = useState(false)
-  const [showCustomOrderModal, setShowCustomOrderModal] = useState(false)
-  const [selectedCanteenForOrder, setSelectedCanteenForOrder] = useState(null)
-  const [customOrderItems, setCustomOrderItems] = useState([])
-  const [orderFormData, setOrderFormData] = useState({
-    specialInstructions: '',
-    deliveryAddress: {
-      roomNumber: '',
-      floor: '',
-      notes: ''
-    }
-  })
-  const [orderSubmitLoading, setOrderSubmitLoading] = useState(false)
-  const [orderMessage, setOrderMessage] = useState('')
-  const [categoryFilter, setCategoryFilter] = useState('all')
-  const [foodTypeFilter, setFoodTypeFilter] = useState('all')
-
-  // Feedback & Rating state
-  const [feedbacks, setFeedbacks] = useState([])
-  const [showFeedbackModal, setShowFeedbackModal] = useState(false)
-  const [selectedOrderForFeedback, setSelectedOrderForFeedback] = useState(null)
-  const [feedbackFormData, setFeedbackFormData] = useState({
-    rating: 5,
-    comment: ''
-  })
-  const [feedbackLoading, setFeedbackLoading] = useState(false)
-
   useEffect(() => {
     // Check if user has any active contracts/bookings
     const checkUserBookingStatus = async () => {
       try {
         console.log('Checking user booking status...')
         
-        // Fetch contracts, hostels, and expenses in parallel
-        const [contractsResponse, hostelsResponse, expensesResponse] = await Promise.all([
+        // Fetch both contracts and hostels in parallel
+        const [contractsResponse, hostelsResponse] = await Promise.all([
           tenantAPI.getMyContracts(),
-          tenantAPI.searchHostels({ page: 1, limit: 100, showAll: true }),
-          tenantAPI.getExpenses().catch(err => {
-            console.warn('Could not fetch expenses:', err)
-            return { data: { data: [] } }
-          })
+          tenantAPI.searchHostels({ page: 1, limit: 100, showAll: true })
         ])
         
-        const contracts = Array.isArray(contractsResponse.data?.data) ? contractsResponse.data.data : []
-        console.log('User contracts:', contracts, 'Is array:', Array.isArray(contracts))
+        const contracts = contractsResponse.data?.data || []
+        console.log('User contracts:', contracts)
         
         const hostelsData = hostelsResponse.data?.data || []
         console.log('Available hostels:', hostelsData.length)
-        
-        // Load expenses from database
-        const expensesData = Array.isArray(expensesResponse.data?.data) ? expensesResponse.data.data : []
-        console.log('Loaded expenses from database:', expensesData.length)
-        
-        // Transform expenses to use _id as id for consistency
-        const transformedExpenses = expensesData.map(exp => ({
-          ...exp,
-          id: exp._id // Use MongoDB _id as id
-        }))
-        
-        // Store all data
-        setContracts(contracts)
-        setExpenses(transformedExpenses)
         
         // If user has active contracts, they're in a hostel
         const hasActive = contracts.some(contract => 
@@ -222,372 +147,6 @@ export default function TenantDashboard() {
       setLoadingRooms(false)
     }
   }
-
-  const fetchCanteens = async () => {
-    try {
-      const response = await tenantAPI.searchHostels({ page: 1, limit: 100, showAll: true })
-      const hostelsData = response.data?.data || []
-      console.log('📍 All hostels fetched:', hostelsData)
-      console.log('📍 Hostels with canteen property:', hostelsData.map(h => ({ name: h.name, hasCanteen: !!h.canteen, canteenData: h.canteen })))
-      // Filter hostels that have canteens
-      const canteenHostels = hostelsData.filter(h => h.canteen)
-      console.log('📍 Filtered canteen hostels:', canteenHostels)
-      setCanteens(canteenHostels)
-    } catch (error) {
-      console.error('Error fetching canteens:', error)
-      setCanteens([])
-    }
-  }
-
-  const fetchMySubscriptions = async () => {
-    try {
-      const response = await canteenAPI.getMySubscriptions()
-      setMySubscriptions(response.data?.data || [])
-    } catch (error) {
-      console.error('Error fetching subscriptions:', error)
-      setMySubscriptions([])
-    }
-  }
-
-  const handleSubscribeToCanteen = async (e) => {
-    e.preventDefault()
-    if (!selectedCanteen) {
-      alert('Please select a canteen')
-      return
-    }
-
-    try {
-      setSubscriptionLoading(true)
-      
-      // Create subscription order
-      const response = await canteenAPI.createSubscriptionOrder({
-        canteenId: selectedCanteen.canteen._id,
-        plan: subscriptionData.plan,
-        duration: parseInt(subscriptionData.duration)
-      })
-
-      console.log('Subscription created:', response.data)
-
-      // In a real app, you would proceed to payment here
-      // For now, we'll show success and refresh
-      alert('✓ Subscription created! Please complete payment to activate.')
-      
-      // Refresh subscriptions and close modal
-      await fetchMySubscriptions()
-      setShowSubscriptionModal(false)
-      setSubscriptionData({ plan: 'breakfast', duration: 1 })
-      setSelectedCanteen(null)
-
-      const successDiv = document.createElement('div')
-      successDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-4 rounded-lg shadow-lg z-50'
-      successDiv.innerHTML = '✓ Subscription created successfully!'
-      document.body.appendChild(successDiv)
-      setTimeout(() => successDiv.remove(), 3000)
-    } catch (error) {
-      alert(error.response?.data?.message || 'Failed to create subscription')
-    } finally {
-      setSubscriptionLoading(false)
-    }
-  }
-
-  // Fetch menu items for a specific canteen
-  const fetchCanteenMenu = async (canteenId) => {
-    try {
-      setMenuLoadingCanteenId(canteenId)
-      const response = await canteenAPI.getCanteenMenu(canteenId)
-      const menuItems = response.data?.data || []
-      setCanteenMenuItems(prev => ({
-        ...prev,
-        [canteenId]: menuItems
-      }))
-    } catch (error) {
-      console.error('Error fetching menu:', error)
-      setCanteenMenuItems(prev => ({
-        ...prev,
-        [canteenId]: []
-      }))
-    } finally {
-      setMenuLoadingCanteenId(null)
-    }
-  }
-
-  // Fetch user's orders
-  const fetchMyOrders = async () => {
-    try {
-      setMyOrdersLoading(true)
-      const response = await canteenAPI.getOrders()
-      // Filter out cancelled orders
-      const filteredOrders = (response.data?.data || []).filter(order => order.orderStatus !== 'cancelled')
-      setMyOrders(filteredOrders)
-    } catch (error) {
-      console.error('Error fetching orders:', error)
-      setMyOrders([])
-    } finally {
-      setMyOrdersLoading(false)
-    }
-  }
-
-  const fetchFeedbacks = async () => {
-    try {
-      // Fetch feedbacks from backend (if feedback API exists)
-      // For now, we'll create feedback when submitted
-      console.log('Feedbacks already loaded')
-    } catch (error) {
-      console.error('Error fetching feedbacks:', error)
-    }
-  }
-
-  const handleSubmitFeedback = async (e) => {
-    e.preventDefault()
-    if (!selectedOrderForFeedback) return
-
-    try {
-      setFeedbackLoading(true)
-      // Create feedback object
-      const feedbackData = {
-        order: selectedOrderForFeedback._id,
-        canteen: selectedOrderForFeedback.canteen._id,
-        rating: feedbackFormData.rating,
-        comment: feedbackFormData.comment,
-      }
-
-      // Submit feedback to backend
-      const response = await canteenAPI.submitOrderFeedback(feedbackData)
-      
-      // Add to local state
-      const newFeedback = {
-        _id: response.data.data._id,
-        ...feedbackData,
-        tenantName: user.name,
-        orderDetails: {
-          orderNumber: selectedOrderForFeedback.orderNumber,
-          canteenName: selectedOrderForFeedback.canteen.name,
-          totalAmount: selectedOrderForFeedback.totalAmount
-        },
-        createdAt: new Date().toISOString()
-      }
-      setFeedbacks([...feedbacks, newFeedback])
-
-      // Show success message
-      const successDiv = document.createElement('div')
-      successDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-4 rounded-lg shadow-lg z-50 flex items-center gap-3'
-      successDiv.innerHTML = '✓ Thank you for your feedback!'
-      document.body.appendChild(successDiv)
-      setTimeout(() => successDiv.remove(), 3000)
-
-      // Reset form and close modal
-      setFeedbackFormData({ rating: 5, comment: '' })
-      setSelectedOrderForFeedback(null)
-      setShowFeedbackModal(false)
-    } catch (error) {
-      console.error('Error submitting feedback:', error)
-      
-      // Show better error notification
-      const errorMessage = error.response?.data?.message || error.message || 'Failed to submit feedback'
-      const errorDiv = document.createElement('div')
-      errorDiv.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-4 rounded-lg shadow-lg z-50 flex items-center gap-3'
-      errorDiv.innerHTML = `✕ ${errorMessage}`
-      document.body.appendChild(errorDiv)
-      setTimeout(() => errorDiv.remove(), 4000)
-    } finally {
-      setFeedbackLoading(false)
-    }
-  }
-
-  // Add item to custom order
-  const addItemToOrder = (menuItem) => {
-    const existingItem = customOrderItems.find(item => item.menuItem._id === menuItem._id)
-    
-    if (existingItem) {
-      // Increase quantity
-      setCustomOrderItems(customOrderItems.map(item =>
-        item.menuItem._id === menuItem._id
-          ? { ...item, quantity: item.quantity + 1 }
-          : item
-      ))
-    } else {
-      // Add new item
-      setCustomOrderItems([...customOrderItems, {
-        menuItem,
-        quantity: 1
-      }])
-    }
-  }
-
-  // Remove item from custom order
-  const removeItemFromOrder = (menuItemId) => {
-    setCustomOrderItems(customOrderItems.filter(item => item.menuItem._id !== menuItemId))
-  }
-
-  // Update quantity
-  const updateItemQuantity = (menuItemId, quantity) => {
-    if (quantity <= 0) {
-      removeItemFromOrder(menuItemId)
-    } else {
-      setCustomOrderItems(customOrderItems.map(item =>
-        item.menuItem._id === menuItemId
-          ? { ...item, quantity }
-          : item
-      ))
-    }
-  }
-
-  // Submit custom order
-  const handlePlaceCustomOrder = async (e) => {
-    e.preventDefault()
-
-    if (!selectedCanteenForOrder) {
-      setOrderMessage('Canteen not selected')
-      return
-    }
-
-    if (customOrderItems.length === 0) {
-      setOrderMessage('Please add items to your order')
-      return
-    }
-
-    if (!orderFormData.deliveryAddress.roomNumber) {
-      setOrderMessage('Please provide your room number')
-      return
-    }
-
-    try {
-      setOrderSubmitLoading(true)
-      setOrderMessage('Creating order...')
-
-      const orderData = {
-        canteen: selectedCanteenForOrder.canteen._id,
-        items: customOrderItems.map(item => ({
-          menuItem: item.menuItem._id,
-          quantity: item.quantity
-        })),
-        deliveryAddress: orderFormData.deliveryAddress,
-        specialInstructions: orderFormData.specialInstructions,
-        paymentMethod: 'online'
-      }
-
-      const response = await canteenAPI.createOrder(orderData)
-      
-      if (response.data?.razorpayOrderId) {
-        // Proceed to payment
-        const result = await new Promise((resolve, reject) => {
-          const options = {
-            key: import.meta.env.VITE_RAZORPAY_KEY_ID,
-            order_id: response.data.razorpayOrderId,
-            amount: response.data.totalAmount * 100,
-            currency: 'INR',
-            name: 'SafeStay - Food Order',
-            description: `Order from ${selectedCanteenForOrder.canteen.name}`,
-            handler: async (paymentResponse) => {
-              try {
-                const verifyResponse = await canteenAPI.verifyPayment({
-                  razorpayOrderId: response.data.razorpayOrderId,
-                  razorpayPaymentId: paymentResponse.razorpay_payment_id,
-                  razorpaySignature: paymentResponse.razorpay_signature,
-                  orderId: response.data._id
-                })
-
-                if (verifyResponse.data?.success) {
-                  setOrderMessage('✓ Order placed successfully!')
-                  setTimeout(() => {
-                    setShowCustomOrderModal(false)
-                    setCustomOrderItems([])
-                    setOrderFormData({ specialInstructions: '', deliveryAddress: { roomNumber: '', floor: '', notes: '' } })
-                    fetchMyOrders()
-                    setOrderMessage('')
-                  }, 1500)
-                  resolve()
-                } else {
-                  reject(new Error('Payment verification failed'))
-                }
-              } catch (error) {
-                reject(error)
-              }
-            },
-            prefill: {
-              email: user?.email || '',
-              contact: user?.phone || ''
-            },
-            theme: { color: '#2563eb' }
-          }
-
-          const paymentObject = new window.Razorpay(options)
-          paymentObject.open()
-          paymentObject.on('payment.failed', (response) => {
-            reject(new Error('Payment failed'))
-          })
-        })
-      } else {
-        setOrderMessage('✓ Order created! Waiting for payment confirmation.')
-        fetchMyOrders()
-      }
-    } catch (error) {
-      console.error('Error placing order:', error)
-      setOrderMessage(error.response?.data?.message || error.message || 'Failed to place order')
-    } finally {
-      setOrderSubmitLoading(false)
-    }
-  }
-
-  // Initialize delivery address from tenant's current room
-  const initializeDeliveryAddress = async () => {
-    try {
-      if (user?.currentRoom && user?.currentHostel) {
-        // Try to fetch room details to get floor and room number
-        console.log('Fetching room details for hostel:', user.currentHostel)
-        const response = await tenantAPI.getHostelDetails(user.currentHostel)
-        const rooms = response.data?.data?.rooms || []
-        const currentRoom = rooms.find(r => r._id === user.currentRoom)
-        
-        if (currentRoom) {
-          console.log('Room found:', currentRoom)
-          setOrderFormData({
-            specialInstructions: '',
-            deliveryAddress: {
-              roomNumber: currentRoom.roomNumber?.toString() || '',
-              floor: currentRoom.floor?.toString() || '',
-              notes: ''
-            }
-          })
-          console.log('Delivery address initialized with:', {
-            roomNumber: currentRoom.roomNumber,
-            floor: currentRoom.floor
-          })
-          return true
-        }
-      }
-      
-      // If no room found, initialize empty
-      console.log('No room found, initializing empty form')
-      setOrderFormData({
-        specialInstructions: '',
-        deliveryAddress: {
-          roomNumber: '',
-          floor: '',
-          notes: ''
-        }
-      })
-      return false
-    } catch (error) {
-      console.error('Error fetching room details:', error)
-      setOrderFormData({
-        specialInstructions: '',
-        deliveryAddress: {
-          roomNumber: '',
-          floor: '',
-          notes: ''
-        }
-      })
-      return false
-    }
-  }
-
-  // Fetch canteens on mount
-  useEffect(() => {
-    fetchCanteens()
-    fetchMySubscriptions()
-    fetchMyOrders()
-  }, [])
 
   // Filter rooms based on criteria
   const getFilteredRooms = () => {
@@ -1048,172 +607,45 @@ export default function TenantDashboard() {
         {/* Content Area */}
         <div className="p-8">
           {activeTab === 'overview' && (
-            <div className="space-y-6">
-              {/* My Active Booking Section */}
-              {userInHostel && myBooking ? (
-                <>
-                  {/* Pending Approval Banner */}
-                    {(myBooking.status === 'pending_signatures' || myBooking.status === 'draft') && (
-                      <div className="bg-yellow-50 border-2 border-yellow-400 rounded-xl p-6 shadow-lg">
-                        <div className="flex items-center gap-4">
-                          <span className="text-4xl">⏳</span>
-                          <div className="flex-1">
-                            <h3 className="text-xl font-bold text-yellow-800 mb-1">Booking Pending Approval</h3>
-                            <p className="text-yellow-700 text-sm">Your booking request is waiting for the hostel owner's approval. You will be notified once approved.</p>
-                          </div>
-                          <button
-                            onClick={() => window.location.reload()}
-                            className="bg-yellow-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-yellow-600 transition"
-                          >
-                            🔄 Refresh Status
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* My Hostel Section */}
-                    <div className={`rounded-xl p-8 shadow-lg border-2 ${
-                      myBooking.status === 'active' 
-                        ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-500' 
-                        : 'bg-gradient-to-r from-gray-50 to-gray-100 border-gray-300'
-                    }`}>
-                      <div className="flex items-start justify-between mb-6">
-                        <div className="flex items-center gap-3">
-                          <span className="text-5xl">🏠</span>
-                          <div>
-                            <h2 className={`text-3xl font-bold mb-1 ${
-                              myBooking.status === 'active' ? 'text-green-700' : 'text-gray-700'
-                            }`}>My Hostel</h2>
-                            <p className={`text-sm font-semibold ${
-                              myBooking.status === 'active' ? 'text-green-600' : 'text-yellow-600'
-                            }`}>
-                              Status: {myBooking.status === 'active' ? '✓ Active' : myBooking.status === 'pending_signatures' ? '⏳ Pending Approval' : '📝 Draft'}
-                            </p>
-                          </div>
-                        </div>
-                        {myBooking.status === 'active' ? (
-                          <div className="bg-green-500 text-white px-4 py-2 rounded-full text-sm font-bold">
-                            ✓ Booked
-                          </div>
-                        ) : (
-                          <div className="bg-yellow-500 text-white px-4 py-2 rounded-full text-sm font-bold">
-                            ⏳ Pending
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="grid md:grid-cols-2 gap-6">
-                        {/* Hostel Details */}
-                        <div className="bg-white rounded-lg p-6 shadow-md">
-                          <h3 className="text-xl font-bold text-text-dark mb-4 border-b pb-2">🏢 Hostel Details</h3>
-                          <div className="space-y-3">
-                            <div>
-                              <p className="text-text-muted text-sm">Hostel Name</p>
-                              <p className="font-bold text-lg text-primary">{myBooking.hostel?.name || 'N/A'}</p>
-                            </div>
-                            <div>
-                              <p className="text-text-muted text-sm">Location</p>
-                              <p className="font-semibold text-text-dark">
-                                📍 {myBooking.hostel?.address?.street}, {myBooking.hostel?.address?.city}, {myBooking.hostel?.address?.state} - {myBooking.hostel?.address?.pincode}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-text-muted text-sm">Owner Contact</p>
-                              <p className="font-semibold text-text-dark">
-                                👤 {myBooking.owner?.name || 'N/A'}
-                              </p>
-                              <p className="font-semibold text-accent">
-                                📞 {myBooking.owner?.phone || 'N/A'}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Room Details */}
-                        <div className="bg-white rounded-lg p-6 shadow-md">
-                          <h3 className="text-xl font-bold text-text-dark mb-4 border-b pb-2">🛏️ Room Details</h3>
-                          <div className="space-y-3">
-                            <div>
-                              <p className="text-text-muted text-sm">Room Number</p>
-                              <p className="font-bold text-2xl text-primary">{myBooking.room?.roomNumber || 'N/A'}</p>
-                            </div>
-                            <div>
-                              <p className="text-text-muted text-sm">Floor</p>
-                              <p className="font-semibold text-text-dark">{myBooking.room?.floor ? `${myBooking.room.floor}${myBooking.room.floor === 1 ? 'st' : myBooking.room.floor === 2 ? 'nd' : myBooking.room.floor === 3 ? 'rd' : 'th'} Floor` : 'N/A'}</p>
-                            </div>
-                            <div>
-                              <p className="text-text-muted text-sm">Rent</p>
-                              <p className="font-bold text-2xl text-accent">₹{myBooking.rent || 'N/A'}/month</p>
-                            </div>
-                            <div>
-                              <p className="text-text-muted text-sm">Security Deposit</p>
-                              <p className="font-semibold text-text-dark">₹{myBooking.securityDeposit || 'N/A'}</p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Contract Dates */}
-                      <div className="mt-6 bg-white rounded-lg p-4 shadow-md">
-                        <div className="grid md:grid-cols-3 gap-4">
-                          <div>
-                            <p className="text-text-muted text-sm mb-1">Contract Start</p>
-                            <p className="font-semibold text-text-dark">
-                              📅 {myBooking.startDate ? new Date(myBooking.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-text-muted text-sm mb-1">Contract End</p>
-                            <p className="font-semibold text-text-dark">
-                              📅 {myBooking.endDate ? new Date(myBooking.endDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Ongoing'}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-text-muted text-sm mb-1">Duration</p>
-                            <p className="font-semibold text-primary">
-                              {myBooking.startDate && myBooking.endDate 
-                                ? `${Math.ceil((new Date(myBooking.endDate) - new Date(myBooking.startDate)) / (1000 * 60 * 60 * 24 * 30))} months`
-                                : 'Ongoing'}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Quick Actions */}
-                      <div className="mt-6 flex gap-3">
-                        <button 
-                          onClick={() => setActiveTab('contracts')}
-                          className="btn-primary flex-1"
-                        >
-                          📄 View Contract
-                        </button>
-                        <button 
-                          onClick={() => {
-                            if (myBooking.hostel?._id) {
-                              setSelectedHostelId(myBooking.hostel._id)
-                              fetchHostelRooms(myBooking.hostel._id)
-                              setActiveTab('hostel')
-                            }
-                          }}
-                          className="btn-secondary flex-1"
-                        >
-                          🏢 View Hostel Details
-                        </button>
+            <>
+              {!userInHostel ? (
+                <div className="space-y-6">
+                  {/* Welcome Message */}
+                  <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-primary rounded-xl p-8 shadow-lg">
+                    <div className="flex items-center gap-3 mb-4">
+                      <span className="text-5xl">🏠</span>
+                      <div>
+                        <h2 className="text-3xl font-bold text-primary mb-1">Welcome to SafeStay Hub! 🎉</h2>
+                        <p className="text-primary text-sm font-semibold">New Tenant • First Time Login</p>
                       </div>
                     </div>
-                </>
-              ) : selectedHostel ? (
-                <>
-                  {/* Hostel Details View when user selects a hostel from browse list */}
-                  <div className="text-center py-12">
-                    <p className="text-text-muted">Hostel details selected</p>
+                    <div className="bg-white rounded-lg p-4 border-l-4 border-primary">
+                      <p className="text-text-dark text-lg mb-2 font-semibold">
+                        🔍 You haven't booked a room yet
+                      </p>
+                      <p className="text-text-muted mb-3">
+                        Browse our verified hostels below and find the perfect accommodation for your needs. Each hostel offers quality rooms, amenities, and services.
+                      </p>
+                      <div className="grid md:grid-cols-3 gap-4 mt-4">
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-green-500 text-xl">✓</span>
+                          <span className="text-text-muted">Verified Properties</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-green-500 text-xl">✓</span>
+                          <span className="text-text-muted">Instant Booking</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-green-500 text-xl">✓</span>
+                          <span className="text-text-muted">24/7 Support</span>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </>
-              ) : (
-                <>
-                  {/* Browse All Hostels - shown when user has no active booking */}
+
+                  {/* Hostel Selection */}
                   <div className="card">
-                    <h3 className="text-2xl font-bold mb-6 text-text-dark">🏢 Available Hostels</h3>
+                    <h3 className="text-2xl font-bold mb-6 text-text-dark">Choose Your Hostel</h3>
                     
                     {loading ? (
                       <div className="flex items-center justify-center py-12">
@@ -1343,9 +775,239 @@ export default function TenantDashboard() {
                       </div>
                     )}
                   </div>
-                </>
+
+                  {/* Quick Info */}
+                  <div className="grid md:grid-cols-2 gap-6">
+                    <div className="card">
+                      <h4 className="text-lg font-bold text-text-dark mb-3">Why Choose SafeStay Hub?</h4>
+                      <ul className="space-y-2 text-text-muted text-sm">
+                        <li className="flex items-center gap-2">
+                          <span className="text-primary">✓</span> Verified Hostels & Properties
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <span className="text-primary">✓</span> Easy Room Booking
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <span className="text-primary">✓</span> Integrated Canteen Services
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <span className="text-primary">✓</span> Digital Contracts & Agreements
+                        </li>
+                        <li className="flex items-center gap-2">
+                          <span className="text-primary">✓</span> 24/7 Customer Support
+                        </li>
+                      </ul>
+                    </div>
+
+                    <div className="card">
+                      <h4 className="text-lg font-bold text-text-dark mb-3">Need Help?</h4>
+                      <p className="text-text-muted text-sm mb-4">
+                        Our team is here to help you find the perfect hostel that fits your needs and budget.
+                      </p>
+                      <button className="btn-secondary w-full">Contact Support</button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Pending Approval Banner */}
+                  {myBooking && (myBooking.status === 'pending_signatures' || myBooking.status === 'draft') && (
+                    <div className="bg-yellow-50 border-2 border-yellow-400 rounded-xl p-6 shadow-lg">
+                      <div className="flex items-center gap-4">
+                        <span className="text-4xl">⏳</span>
+                        <div className="flex-1">
+                          <h3 className="text-xl font-bold text-yellow-800 mb-1">Booking Pending Approval</h3>
+                          <p className="text-yellow-700 text-sm">Your booking request is waiting for the hostel owner's approval. You will be notified once approved.</p>
+                        </div>
+                        <button
+                          onClick={() => window.location.reload()}
+                          className="bg-yellow-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-yellow-600 transition"
+                        >
+                          🔄 Refresh Status
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* My Hostel Section */}
+                  {myBooking && (
+                    <div className={`rounded-xl p-8 shadow-lg border-2 ${
+                      myBooking.status === 'active' 
+                        ? 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-500' 
+                        : 'bg-gradient-to-r from-gray-50 to-gray-100 border-gray-300'
+                    }`}>
+                      <div className="flex items-start justify-between mb-6">
+                        <div className="flex items-center gap-3">
+                          <span className="text-5xl">🏠</span>
+                          <div>
+                            <h2 className={`text-3xl font-bold mb-1 ${
+                              myBooking.status === 'active' ? 'text-green-700' : 'text-gray-700'
+                            }`}>My Hostel</h2>
+                            <p className={`text-sm font-semibold ${
+                              myBooking.status === 'active' ? 'text-green-600' : 'text-yellow-600'
+                            }`}>
+                              Status: {myBooking.status === 'active' ? '✓ Active' : myBooking.status === 'pending_signatures' ? '⏳ Pending Approval' : '📝 Draft'}
+                            </p>
+                          </div>
+                        </div>
+                        {myBooking.status === 'active' ? (
+                          <div className="bg-green-500 text-white px-4 py-2 rounded-full text-sm font-bold">
+                            ✓ Booked
+                          </div>
+                        ) : (
+                          <div className="bg-yellow-500 text-white px-4 py-2 rounded-full text-sm font-bold">
+                            ⏳ Pending
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="grid md:grid-cols-2 gap-6">
+                        {/* Hostel Details */}
+                        <div className="bg-white rounded-lg p-6 shadow-md">
+                          <h3 className="text-xl font-bold text-text-dark mb-4 border-b pb-2">🏢 Hostel Details</h3>
+                          <div className="space-y-3">
+                            <div>
+                              <p className="text-text-muted text-sm">Hostel Name</p>
+                              <p className="font-bold text-lg text-primary">{myBooking.hostel?.name || 'N/A'}</p>
+                            </div>
+                            <div>
+                              <p className="text-text-muted text-sm">Location</p>
+                              <p className="font-semibold text-text-dark">
+                                📍 {myBooking.hostel?.address?.street}, {myBooking.hostel?.address?.city}, {myBooking.hostel?.address?.state} - {myBooking.hostel?.address?.pincode}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-text-muted text-sm">Owner Contact</p>
+                              <p className="font-semibold text-text-dark">
+                                👤 {myBooking.owner?.name || 'N/A'}
+                              </p>
+                              <p className="font-semibold text-accent">
+                                📞 {myBooking.owner?.phone || 'N/A'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Room Details */}
+                        <div className="bg-white rounded-lg p-6 shadow-md">
+                          <h3 className="text-xl font-bold text-text-dark mb-4 border-b pb-2">🛏️ Room Details</h3>
+                          <div className="space-y-3">
+                            <div>
+                              <p className="text-text-muted text-sm">Room Number</p>
+                              <p className="font-bold text-2xl text-primary">{myBooking.room?.roomNumber || 'N/A'}</p>
+                            </div>
+                            <div>
+                              <p className="text-text-muted text-sm">Floor</p>
+                              <p className="font-semibold text-text-dark">{myBooking.room?.floor ? `${myBooking.room.floor}${myBooking.room.floor === 1 ? 'st' : myBooking.room.floor === 2 ? 'nd' : myBooking.room.floor === 3 ? 'rd' : 'th'} Floor` : 'N/A'}</p>
+                            </div>
+                            <div>
+                              <p className="text-text-muted text-sm">Rent</p>
+                              <p className="font-bold text-2xl text-accent">₹{myBooking.rent || 'N/A'}/month</p>
+                            </div>
+                            <div>
+                              <p className="text-text-muted text-sm">Security Deposit</p>
+                              <p className="font-semibold text-text-dark">₹{myBooking.securityDeposit || 'N/A'}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Contract Dates */}
+                      <div className="mt-6 bg-white rounded-lg p-4 shadow-md">
+                        <div className="grid md:grid-cols-3 gap-4">
+                          <div>
+                            <p className="text-text-muted text-sm mb-1">Contract Start</p>
+                            <p className="font-semibold text-text-dark">
+                              📅 {myBooking.startDate ? new Date(myBooking.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'N/A'}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-text-muted text-sm mb-1">Contract End</p>
+                            <p className="font-semibold text-text-dark">
+                              📅 {myBooking.endDate ? new Date(myBooking.endDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Ongoing'}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-text-muted text-sm mb-1">Duration</p>
+                            <p className="font-semibold text-primary">
+                              {myBooking.startDate && myBooking.endDate 
+                                ? `${Math.ceil((new Date(myBooking.endDate) - new Date(myBooking.startDate)) / (1000 * 60 * 60 * 24 * 30))} months`
+                                : 'Ongoing'}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Quick Actions */}
+                      <div className="mt-6 flex gap-3">
+                        <button 
+                          onClick={() => setActiveTab('contracts')}
+                          className="btn-primary flex-1"
+                        >
+                          📄 View Contract
+                        </button>
+                        <button 
+                          onClick={() => {
+                            if (myBooking.hostel?._id) {
+                              setSelectedHostelId(myBooking.hostel._id)
+                              fetchHostelRooms(myBooking.hostel._id)
+                              setActiveTab('hostel')
+                            }
+                          }}
+                          className="btn-secondary flex-1"
+                        >
+                          🏢 View Hostel Details
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid md:grid-cols-3 gap-6">
+                    <div className="stats-card">
+                      <p className="text-text-muted text-sm mb-2">Current Hostel</p>
+                      <h3 className="text-2xl font-bold text-primary mb-2">{myBooking?.hostel?.name || 'N/A'}</h3>
+                      <p className="text-text-muted">Rent: ₹{myBooking?.rent || 'N/A'}/month</p>
+                    </div>
+
+                    <div className="stats-card">
+                      <p className="text-text-muted text-sm mb-2">Room Number</p>
+                      <h3 className="text-2xl font-bold text-accent">{myBooking?.room?.roomNumber || 'N/A'}</h3>
+                      <p className="text-text-muted">Floor: {myBooking?.room?.floor || 'N/A'}</p>
+                    </div>
+
+                    <div className="stats-card">
+                      <p className="text-text-muted text-sm mb-2">Contract Status</p>
+                      <h3 className="text-2xl font-bold text-success">
+                        {myBooking?.status === 'active' ? '✓ Active' : myBooking?.status === 'pending_signatures' ? 'Pending' : 'Draft'}
+                      </h3>
+                      <p className="text-text-muted">Since {myBooking?.startDate ? new Date(myBooking.startDate).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : 'N/A'}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid md:grid-cols-2 gap-6">
+                    <div className="card">
+                      <h3 className="text-xl font-bold mb-4 text-text-dark">Quick Actions</h3>
+                      <div className="space-y-3">
+                        <button className="btn-primary w-full text-left py-3">Order Food</button>
+                        <button className="btn-secondary w-full text-left py-3">View Contracts</button>
+                        <button className="btn-secondary w-full text-left py-3">Submit Feedback</button>
+                      </div>
+                    </div>
+
+                    <div className="card">
+                      <h3 className="text-xl font-bold mb-4 text-text-dark">Recent Notifications</h3>
+                      <div className="space-y-3 text-sm">
+                        <p className="border-l-4 border-primary pl-3">✓ Payment received for this month</p>
+                        <p className="border-l-4 border-accent pl-3">📦 Food order delivered</p>
+                        <p className="border-l-4 border-success pl-3">⭐ Your feedback was helpful</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button className="sos-button text-lg font-bold">🚨 SOS - EMERGENCY BUTTON</button>
+                </div>
               )}
-            </div>
+            </>
           )}
 
           {activeTab === 'hostel' && (
@@ -1452,139 +1114,6 @@ export default function TenantDashboard() {
                       <div className="text-center py-8 bg-gray-50 rounded-lg">
                         <p className="text-5xl mb-3">👤</p>
                         <p className="text-text-muted">You are the only occupant in this room</p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Browse Other Hostels Section */}
-                  <div className="card">
-                    <h3 className="text-2xl font-bold mb-6 text-text-dark">🏢 Browse Other Hostels</h3>
-                    
-                    {loading ? (
-                      <div className="flex items-center justify-center py-12">
-                        <div className="text-center">
-                          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-primary mb-4"></div>
-                          <p className="text-text-muted">Loading available hostels...</p>
-                        </div>
-                      </div>
-                    ) : !hostels || hostels.length === 0 ? (
-                      <div className="text-center py-12">
-                        <p className="text-text-muted text-lg">No other hostels available at the moment.</p>
-                        <p className="text-text-muted mt-2">Please check back later or contact support.</p>
-                      </div>
-                    ) : (
-                      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {hostels.map((hostel) => (
-                          <div
-                            key={hostel._id}
-                            className="border-2 border-gray-200 rounded-lg overflow-hidden hover:border-primary hover:shadow-xl transition-all"
-                          >
-                            {/* Hostel Image */}
-                            <div className="relative h-48 bg-gray-200 overflow-hidden">
-                              {hostel.photos && hostel.photos.length > 0 ? (
-                                <img
-                                  src={hostel.photos[0].url}
-                                  alt={hostel.name}
-                                  className="w-full h-full object-cover hover:scale-105 transition-transform"
-                                />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-100 to-indigo-100">
-                                  <span className="text-4xl">🏢</span>
-                                </div>
-                              )}
-                              {/* Verification Badge */}
-                              {hostel.verificationStatus === 'verified' && (
-                                <div className="absolute top-3 right-3 bg-green-500 text-white px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-1">
-                                  ✓ Verified
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Hostel Details */}
-                            <div className="p-5">
-                              <h4 className="text-lg font-bold text-text-dark mb-1">{hostel.name}</h4>
-                              <p className="text-text-muted text-sm mb-4 flex items-center gap-1">
-                                📍 {hostel.address?.city}, {hostel.address?.state}
-                              </p>
-
-                              {/* Key Details Grid */}
-                              <div className="space-y-3 mb-4 pb-4 border-b border-gray-200">
-                                <div className="flex justify-between items-center">
-                                  <span className="text-text-muted text-sm">Type:</span>
-                                  <span className="font-semibold text-text-dark">
-                                    {hostel.hostelType === 'co-ed' ? '👥 Co-ed' : hostel.hostelType === 'boys' ? '👨 Boys Only' : '👩 Girls Only'}
-                                  </span>
-                                </div>
-
-                                <div className="flex justify-between items-center">
-                                  <span className="text-text-muted text-sm">Rent Range:</span>
-                                  <span className="font-semibold text-accent">₹{hostel.priceRange?.min} - ₹{hostel.priceRange?.max}</span>
-                                </div>
-
-                                <div className="flex justify-between items-center">
-                                  <span className="text-text-muted text-sm">Available Rooms:</span>
-                                  <span className="font-semibold text-primary">{hostel.availableRooms || 0}/{hostel.totalRooms || 0}</span>
-                                </div>
-
-                                <div className="flex justify-between items-center">
-                                  <span className="text-text-muted text-sm">Rating:</span>
-                                  <span className="font-semibold text-yellow-500">
-                                    ⭐ {hostel.rating ? hostel.rating.toFixed(1) : 'N/A'} ({hostel.reviewCount || 0} reviews)
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Amenities Preview */}
-                              {hostel.amenities && hostel.amenities.length > 0 && (
-                                <div className="mb-4">
-                                  <p className="text-xs font-semibold text-text-muted mb-2 uppercase">Amenities</p>
-                                  <div className="flex flex-wrap gap-2">
-                                    {hostel.amenities.slice(0, 3).map((amenity, idx) => (
-                                      <span key={idx} className="bg-blue-50 text-primary text-xs px-2 py-1 rounded-full font-medium">
-                                        {amenity}
-                                      </span>
-                                    ))}
-                                    {hostel.amenities.length > 3 && (
-                                      <span className="bg-gray-100 text-text-muted text-xs px-2 py-1 rounded-full font-medium">
-                                        +{hostel.amenities.length - 3} more
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Canteen Badge */}
-                              {hostel.hasCanteen && (
-                                <div className="mb-4 bg-orange-50 border border-orange-200 rounded-lg p-2 text-center">
-                                  <p className="text-xs font-semibold text-orange-600">🍽️ Has Canteen</p>
-                                </div>
-                              )}
-
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={async (e) => {
-                                    e.stopPropagation()
-                                    setSelectedHostelId(hostel._id)
-                                    await fetchHostelRooms(hostel._id)
-                                    setActiveTab('hostel')
-                                  }}
-                                  className="flex-1 bg-white border-2 border-primary text-primary py-2 rounded-lg font-semibold hover:bg-blue-50 transition flex items-center justify-center gap-1"
-                                >
-                                  👁️ View
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    alert(`Booking functionality for ${hostel.name} will be implemented soon!\n\nPlease contact the hostel owner or visit the hostel details page to book a room.`)
-                                  }}
-                                  className="flex-1 bg-primary text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition flex items-center justify-center gap-1"
-                                >
-                                  📝 Book
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
                       </div>
                     )}
                   </div>
@@ -2437,499 +1966,17 @@ export default function TenantDashboard() {
             </div>
           )}
 
-                {contractsLoading ? (
-                  <div className="flex items-center justify-center py-12">
-                    <div className="text-center">
-                      <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-primary mb-4"></div>
-                      <p className="text-text-muted">Loading contracts...</p>
-                    </div>
-                  </div>
-                ) : !Array.isArray(contracts) || contracts.length === 0 ? (
-                  <div className="text-center py-12">
-                    <div className="text-6xl mb-4">📋</div>
-                    <h3 className="text-xl font-bold text-text-dark mb-2">No Contracts Yet</h3>
-                    <p className="text-text-muted">You haven't signed any room rental contracts yet.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {contracts.map((contract, idx) => {
-                      if (!contract || !contract._id) return null
-                      return (
-                        <div key={contract._id || idx} className={`border-2 rounded-lg p-6 ${
-                          contract.status === 'active' ? 'border-green-300 bg-green-50' :
-                          contract.status === 'pending_signatures' ? 'border-yellow-300 bg-yellow-50' :
-                          contract.status === 'draft' ? 'border-blue-300 bg-blue-50' :
-                          'border-gray-300 bg-gray-50'
-                        }`}>
-                          {/* Contract Header */}
-                          <div className="flex items-start justify-between mb-4">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-3 mb-2">
-                                <h4 className="text-xl font-bold text-text-dark">{contract.hostel?.name || 'N/A'}</h4>
-                                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                                  contract.status === 'active' ? 'bg-green-200 text-green-800' :
-                                  contract.status === 'pending_signatures' ? 'bg-yellow-200 text-yellow-800' :
-                                  contract.status === 'draft' ? 'bg-blue-200 text-blue-800' :
-                                  'bg-gray-200 text-gray-800'
-                                }`}>
-                                  {contract.status === 'active' ? '✓ Active' :
-                                   contract.status === 'pending_signatures' ? '⏳ Pending Approval' :
-                                   contract.status === 'draft' ? '📝 Draft' :
-                                   contract.status}
-                                </span>
-                              </div>
-                              <p className="text-text-muted text-sm">📍 {contract.hostel?.address?.city || 'N/A'}, {contract.hostel?.address?.state || 'N/A'}</p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-sm text-text-muted mb-1">Contract ID</p>
-                              <p className="font-mono text-xs text-text-dark">{contract._id?.slice(-8) || 'N/A'}</p>
-                            </div>
-                          </div>
-
-                          {/* Contract Details Grid */}
-                          <div className="grid md:grid-cols-3 gap-4 mb-4">
-                            <div className="bg-white rounded p-3">
-                              <p className="text-xs font-semibold text-text-muted uppercase mb-1">Room</p>
-                              <p className="text-lg font-bold text-primary">{contract.room?.roomNumber || 'N/A'}</p>
-                              <p className="text-xs text-text-muted capitalize">{contract.room?.roomType || 'N/A'} • Floor {contract.room?.floor || 'N/A'}</p>
-                            </div>
-
-                            <div className="bg-white rounded p-3">
-                              <p className="text-xs font-semibold text-text-muted uppercase mb-1">Monthly Rent</p>
-                              <p className="text-lg font-bold text-accent">₹{contract.rent || 'N/A'}</p>
-                              <p className="text-xs text-text-muted">Deposit: ₹{contract.securityDeposit || 'N/A'}</p>
-                            </div>
-
-                            <div className="bg-white rounded p-3">
-                              <p className="text-xs font-semibold text-text-muted uppercase mb-1">Owner</p>
-                              <p className="text-sm font-semibold text-text-dark">{contract.owner?.name || 'N/A'}</p>
-                              <p className="text-xs text-text-muted">📞 {contract.owner?.phone || 'N/A'}</p>
-                            </div>
-                          </div>
-
-                          {/* Contract Dates */}
-                          <div className="grid md:grid-cols-3 gap-4 mb-4 pb-4 border-b border-gray-300">
-                            <div>
-                              <p className="text-xs font-semibold text-text-muted uppercase mb-1">Start Date</p>
-                              <p className="font-semibold text-text-dark">
-                                {contract.startDate ? new Date(contract.startDate).toLocaleDateString('en-IN', {
-                                  day: '2-digit',
-                                  month: 'short',
-                                  year: 'numeric'
-                                }) : 'N/A'}
-                              </p>
-                            </div>
-
-                            <div>
-                              <p className="text-xs font-semibold text-text-muted uppercase mb-1">End Date</p>
-                              <p className="font-semibold text-text-dark">
-                                {contract.endDate ? new Date(contract.endDate).toLocaleDateString('en-IN', {
-                                  day: '2-digit',
-                                  month: 'short',
-                                  year: 'numeric'
-                                }) : 'Ongoing'}
-                              </p>
-                            </div>
-
-                            <div>
-                              <p className="text-xs font-semibold text-text-muted uppercase mb-1">Duration</p>
-                              <p className="font-semibold text-primary">
-                                {contract.startDate && contract.endDate
-                                  ? `${Math.ceil((new Date(contract.endDate) - new Date(contract.startDate)) / (1000 * 60 * 60 * 24 * 30))} months`
-                                  : 'Ongoing'}
-                              </p>
-                            </div>
-                          </div>
-
-                          {/* Contract Terms */}
-                          {contract.terms && typeof contract.terms === 'string' && (
-                            <div className="bg-white rounded p-3 mb-4">
-                              <p className="text-xs font-semibold text-text-muted uppercase mb-2">Terms & Conditions</p>
-                              <p className="text-sm text-text-dark">{contract.terms}</p>
-                            </div>
-                          )}
-
-                          {/* Action Buttons */}
-                          <div className="flex gap-3">
-                            <button
-                              onClick={() => setSelectedContractForDetails(contract)}
-                              className="flex-1 bg-white border-2 border-primary text-primary py-2 rounded-lg font-semibold hover:bg-blue-50 transition"
-                            >
-                              📋 View Details
-                            </button>
-                            {contract.status === 'pending_signatures' && (
-                              <button
-                                onClick={() => alert('E-signature functionality coming soon!')}
-                                className="flex-1 bg-primary text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition"
-                              >
-                                ✍️ Sign Contract
-                              </button>
-                            )}
-                            {contract.status === 'active' && (
-                              <button
-                                onClick={() => setContractToTerminate(contract)}
-                                className="flex-1 bg-red-500 text-white py-2 rounded-lg font-semibold hover:bg-red-600 transition"
-                              >
-                                ⚠️ Terminate
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Contracts Summary */}
-              {Array.isArray(contracts) && contracts.length > 0 && (
-                <div className="grid md:grid-cols-4 gap-4">
-                  <div className="stats-card">
-                    <p className="text-text-muted text-sm mb-2">Total Contracts</p>
-                    <h3 className="text-3xl font-bold text-primary">{contracts.length}</h3>
-                  </div>
-                  <div className="stats-card">
-                    <p className="text-text-muted text-sm mb-2">Active</p>
-                    <h3 className="text-3xl font-bold text-green-600">{contracts.filter(c => c.status === 'active').length}</h3>
-                  </div>
-                  <div className="stats-card">
-                    <p className="text-text-muted text-sm mb-2">Pending</p>
-                    <h3 className="text-3xl font-bold text-yellow-600">{contracts.filter(c => c.status === 'pending_signatures' || c.status === 'draft').length}</h3>
-                  </div>
-                  <div className="stats-card">
-                    <p className="text-text-muted text-sm mb-2">Terminated</p>
-                    <h3 className="text-3xl font-bold text-red-600">{contracts.filter(c => c.status === 'terminated').length}</h3>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
           {activeTab === 'expenses' && (
-            <div className="space-y-6">
-              {/* Expense Summary Cards */}
-              <div className="grid md:grid-cols-4 gap-4">
-                <div className="stats-card">
-                  <p className="text-text-muted text-sm mb-2">Total Due</p>
-                  <h3 className="text-3xl font-bold text-red-600">₹{expenses.filter(e => e.status === 'pending').reduce((sum, e) => sum + e.amount, 0)}</h3>
-                </div>
-                <div className="stats-card">
-                  <p className="text-text-muted text-sm mb-2">Paid</p>
-                  <h3 className="text-3xl font-bold text-green-600">₹{expenses.filter(e => e.status === 'paid').reduce((sum, e) => sum + e.amount, 0)}</h3>
-                </div>
-                <div className="stats-card">
-                  <p className="text-text-muted text-sm mb-2">Pending</p>
-                  <h3 className="text-3xl font-bold text-orange-600">{expenses.filter(e => e.status === 'pending').length}</h3>
-                </div>
-                <div className="stats-card">
-                  <p className="text-text-muted text-sm mb-2">Selected for Payment</p>
-                  <h3 className="text-3xl font-bold text-primary">{selectedExpensesForPayment.length}</h3>
-                </div>
-              </div>
-
-              {/* Expenses by Category */}
-              <div className="space-y-6">
-                {/* Hostel Expenses */}
-                <div className="card">
-                  <h3 className="text-xl font-bold mb-4 text-text-dark flex items-center gap-2">
-                    🏢 Hostel Expenses
-                  </h3>
-                  {expenses.filter(e => e.type === 'hostel').length === 0 ? (
-                    <p className="text-text-muted">No hostel expenses</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {expenses.filter(e => e.type === 'hostel').map(expense => (
-                        <div key={expense.id} className={`border-2 rounded-lg p-4 flex items-center justify-between ${
-                          expense.status === 'paid' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
-                        }`}>
-                          <div className="flex items-center gap-4 flex-1">
-                            <input
-                              type="checkbox"
-                              checked={selectedExpensesForPayment.includes(expense.id)}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelectedExpensesForPayment([...selectedExpensesForPayment, expense.id])
-                                } else {
-                                  setSelectedExpensesForPayment(selectedExpensesForPayment.filter(id => id !== expense.id))
-                                }
-                              }}
-                              disabled={expense.status === 'paid'}
-                              className="w-5 h-5 accent-primary cursor-pointer"
-                            />
-                            <div className="flex-1">
-                              <p className="font-semibold text-text-dark">{expense.name}</p>
-                              <p className="text-sm text-text-muted">{expense.description}</p>
-                              <p className="text-xs text-text-muted mt-1">Due: {new Date(expense.dueDate).toLocaleDateString('en-IN')}</p>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-bold text-lg">₹{expense.amount}</p>
-                            <span className={`text-xs font-semibold px-2 py-1 rounded ${
-                              expense.status === 'paid' ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'
-                            }`}>
-                              {expense.status === 'paid' ? '✓ Paid' : '⏳ Pending'}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Canteen Expenses */}
-                <div className="card">
-                  <h3 className="text-xl font-bold mb-4 text-text-dark flex items-center gap-2">
-                    🍽️ Canteen Expenses
-                  </h3>
-                  {expenses.filter(e => e.type === 'canteen').length === 0 ? (
-                    <p className="text-text-muted">No canteen expenses</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {expenses.filter(e => e.type === 'canteen').map(expense => (
-                        <div key={expense.id} className={`border-2 rounded-lg p-4 flex items-center justify-between ${
-                          expense.status === 'paid' ? 'bg-green-50 border-green-200' : 'bg-orange-50 border-orange-200'
-                        }`}>
-                          <div className="flex items-center gap-4 flex-1">
-                            <input
-                              type="checkbox"
-                              checked={selectedExpensesForPayment.includes(expense.id)}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelectedExpensesForPayment([...selectedExpensesForPayment, expense.id])
-                                } else {
-                                  setSelectedExpensesForPayment(selectedExpensesForPayment.filter(id => id !== expense.id))
-                                }
-                              }}
-                              disabled={expense.status === 'paid'}
-                              className="w-5 h-5 accent-primary cursor-pointer"
-                            />
-                            <div className="flex-1">
-                              <p className="font-semibold text-text-dark">{expense.name}</p>
-                              <p className="text-sm text-text-muted">{expense.description}</p>
-                              <p className="text-xs text-text-muted mt-1">Due: {new Date(expense.dueDate).toLocaleDateString('en-IN')}</p>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-bold text-lg">₹{expense.amount}</p>
-                            <span className={`text-xs font-semibold px-2 py-1 rounded ${
-                              expense.status === 'paid' ? 'bg-green-200 text-green-800' : 'bg-orange-200 text-orange-800'
-                            }`}>
-                              {expense.status === 'paid' ? '✓ Paid' : '⏳ Pending'}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Other Expenses */}
-                <div className="card">
-                  <h3 className="text-xl font-bold mb-4 text-text-dark flex items-center gap-2">
-                    💰 Other Expenses
-                  </h3>
-                  {expenses.filter(e => e.type === 'other').length === 0 ? (
-                    <p className="text-text-muted">No other expenses</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {expenses.filter(e => e.type === 'other').map(expense => (
-                        <div key={expense.id} className={`border-2 rounded-lg p-4 flex items-center justify-between ${
-                          expense.status === 'paid' ? 'bg-green-50 border-green-200' : 'bg-purple-50 border-purple-200'
-                        }`}>
-                          <div className="flex items-center gap-4 flex-1">
-                            <input
-                              type="checkbox"
-                              checked={selectedExpensesForPayment.includes(expense.id)}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelectedExpensesForPayment([...selectedExpensesForPayment, expense.id])
-                                } else {
-                                  setSelectedExpensesForPayment(selectedExpensesForPayment.filter(id => id !== expense.id))
-                                }
-                              }}
-                              disabled={expense.status === 'paid'}
-                              className="w-5 h-5 accent-primary cursor-pointer"
-                            />
-                            <div className="flex-1">
-                              <p className="font-semibold text-text-dark">{expense.name}</p>
-                              <p className="text-sm text-text-muted">{expense.description}</p>
-                              <p className="text-xs text-text-muted mt-1">Due: {new Date(expense.dueDate).toLocaleDateString('en-IN')}</p>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-bold text-lg">₹{expense.amount}</p>
-                            <span className={`text-xs font-semibold px-2 py-1 rounded ${
-                              expense.status === 'paid' ? 'bg-green-200 text-green-800' : 'bg-purple-200 text-purple-800'
-                            }`}>
-                              {expense.status === 'paid' ? '✓ Paid' : '⏳ Pending'}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Payment Section */}
-              {selectedExpensesForPayment.length > 0 && (
-                <div className="fixed bottom-0 left-0 right-0 bg-white border-t-2 border-primary shadow-lg">
-                  <div className="max-w-7xl mx-auto p-6 flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-text-muted">Selected for payment</p>
-                      <p className="text-2xl font-bold text-primary">
-                        ₹{expenses.filter(e => selectedExpensesForPayment.includes(e.id)).reduce((sum, e) => sum + e.amount, 0)}
-                      </p>
-                    </div>
-                    <div className="flex gap-3">
-                      <button
-                        onClick={() => setSelectedExpensesForPayment([])}
-                        className="px-6 py-3 bg-gray-200 text-text-dark rounded-lg font-semibold hover:bg-gray-300 transition"
-                      >
-                        Clear Selection
-                      </button>
-                      <button
-                        onClick={async () => {
-                          try {
-                            setPaymentLoading(true)
-                            
-                            // Calculate total amount for selected expenses
-                            const totalAmount = expenses
-                              .filter(e => selectedExpensesForPayment.includes(e.id))
-                              .reduce((sum, e) => sum + e.amount, 0)
-
-                            console.log('Creating expense payment order for amount:', totalAmount)
-                            console.log('Selected expenses:', selectedExpensesForPayment)
-
-                            // Create order on backend
-                            console.log('Calling API: /tenant/create-expense-order')
-                            const orderResponse = await tenantAPI.createExpenseOrder({
-                              expenseIds: selectedExpensesForPayment,
-                              amount: totalAmount
-                            }).catch(err => {
-                              console.error('API error details:', err)
-                              throw new Error(`API Error: ${err.response?.status || 'Network'} - ${err.response?.data?.message || err.message}`)
-                            })
-
-                            console.log('Order created:', orderResponse.data)
-
-                            if (!orderResponse.data.success) {
-                              throw new Error(orderResponse.data.message || 'Failed to create order')
-                            }
-
-                            // Initialize Razorpay payment
-                            console.log('Opening Razorpay checkout...')
-                            const paymentResponse = await handleExpensePayment(
-                              orderResponse.data,
-                              tenantAPI
-                            )
-
-                            console.log('Payment response:', paymentResponse)
-
-                            // Verify payment on backend
-                            console.log('Verifying payment on backend...')
-                            const verifyResponse = await tenantAPI.verifyExpensePayment({
-                              razorpay_order_id: paymentResponse.razorpay_order_id,
-                              razorpay_payment_id: paymentResponse.razorpay_payment_id,
-                              razorpay_signature: paymentResponse.razorpay_signature,
-                              expenseIds: selectedExpensesForPayment
-                            }).catch(err => {
-                              console.error('Verify API error:', err)
-                              throw new Error(`Verify Error: ${err.response?.status || 'Network'} - ${err.response?.data?.message || err.message}`)
-                            })
-
-                            console.log('Payment verified:', verifyResponse.data)
-
-                            if (verifyResponse.data.success) {
-                              // Update expenses to paid status
-                              setExpenses(expenses.map(e => 
-                                selectedExpensesForPayment.includes(e.id) 
-                                  ? { ...e, status: 'paid' }
-                                  : e
-                              ))
-                              setSelectedExpensesForPayment([])
-                              setPaymentSuccess(true)
-                              setTimeout(() => setPaymentSuccess(false), 3000)
-                            }
-                          } catch (error) {
-                            console.error('❌ Payment error:', error)
-                            console.error('Error stack:', error.stack)
-                            
-                            let errorMsg = 'Payment failed'
-                            if (error.response?.status === 401) {
-                              errorMsg = 'Unauthorized: Please login again'
-                            } else if (error.response?.status === 400) {
-                              errorMsg = 'Bad request: ' + (error.response?.data?.message || error.message)
-                            } else if (error.response?.status === 500) {
-                              errorMsg = 'Server error: ' + (error.response?.data?.message || error.message)
-                            } else if (error.message === 'Network Error') {
-                              errorMsg = 'Network Error: Cannot reach server at http://localhost:5000. Is backend running?'
-                            } else {
-                              errorMsg = error.message || 'Please try again'
-                            }
-                            
-                            alert('❌ ' + errorMsg)
-                          } finally {
-                            setPaymentLoading(false)
-                          }
-                        }}
-                        disabled={paymentLoading}
-                        className="px-8 py-3 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg font-bold hover:shadow-lg transition disabled:opacity-50"
-                      >
-                        {paymentLoading ? '💳 Processing...' : '💳 Pay Now'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Success Message */}
-              {paymentSuccess && (
-                <div className="fixed top-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg font-semibold shadow-lg animate-pulse">
-                  ✅ Payment successful! Expenses marked as paid.
-                </div>
-              )}
+            <div className="card">
+              <h3 className="text-2xl font-bold mb-4 text-text-dark">My Expenses</h3>
+              <p className="text-text-muted">Coming soon...</p>
             </div>
           )}
 
           {activeTab === 'feedback' && (
             <div className="card">
-              <h3 className="text-2xl font-bold mb-6 text-text-dark">📝 Feedback & Ratings</h3>
-              {feedbacks && feedbacks.length > 0 ? (
-                <div className="space-y-4">
-                  {feedbacks.map(feedback => (
-                    <div key={feedback._id} className="border-2 border-blue-200 rounded-lg p-4 bg-blue-50">
-                      <div className="flex items-start justify-between mb-3">
-                        <div>
-                          <p className="font-bold text-text-dark">{feedback.orderDetails?.canteenName}</p>
-                          <p className="text-sm text-text-muted">Order #{feedback.orderDetails?.orderNumber}</p>
-                        </div>
-                        <div className="text-right">
-                          <div className="flex gap-1 justify-end mb-1">
-                            {[...Array(5)].map((_, i) => (
-                              <span key={i} className={i < feedback.rating ? 'text-yellow-400' : 'text-gray-300'}>
-                                ⭐
-                              </span>
-                            ))}
-                          </div>
-                          <p className="text-sm font-semibold text-blue-600">{feedback.rating}/5</p>
-                        </div>
-                      </div>
-                      {feedback.comment && (
-                        <p className="text-text-dark mb-2">{feedback.comment}</p>
-                      )}
-                      <p className="text-xs text-text-muted">
-                        {new Date(feedback.createdAt).toLocaleDateString()} at {new Date(feedback.createdAt).toLocaleTimeString()}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <p className="text-text-muted mb-2">No feedback submitted yet</p>
-                  <p className="text-sm text-text-muted">Rate and review your delivered orders to help us improve!</p>
-                </div>
-              )}
+              <h3 className="text-2xl font-bold mb-4 text-text-dark">Feedback & Suggestions</h3>
+              <p className="text-text-muted">Coming soon...</p>
             </div>
           )}
 

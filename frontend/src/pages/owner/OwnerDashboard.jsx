@@ -99,9 +99,8 @@ export default function OwnerDashboard() {
   // Derived dashboard stats from real hostels data
   const stats = {
     activeHostels: hostels.length,
-    roomsAvailable: allRooms.filter(r => r.isAvailable === true).length,
-    totalRooms: allRooms.length,
-    pendingVerifications: tenants.filter(t => t.status === 'pending' || t.status === 'pending_signatures').length,
+    roomsAvailable: hostels.reduce((sum, h) => sum + (h.availableRooms || 0), 0),
+    pendingVerifications: hostels.filter((h) => h.verificationStatus === 'pending').length,
     activeTenants: tenants.filter(t => t.status === 'active').length,
   }
   const handlePickMedia = (e) => {
@@ -343,89 +342,18 @@ export default function OwnerDashboard() {
                 <div className="stats-card">
                   <p className="text-text-muted text-sm mb-2">Active Hostels</p>
                   <h3 className="text-3xl font-bold text-primary">{stats.activeHostels}</h3>
-                  <p className="text-xs text-text-muted mt-2">{hostels.length > 0 ? 'View in Hostels tab' : 'Create your first hostel'}</p>
                 </div>
                 <div className="stats-card">
-                  <p className="text-text-muted text-sm mb-2">Total Rooms</p>
-                  <h3 className="text-3xl font-bold text-accent">{stats.totalRooms}</h3>
-                  <p className="text-xs text-text-muted mt-2">{stats.roomsAvailable} available</p>
+                  <p className="text-text-muted text-sm mb-2">Rooms Available</p>
+                  <h3 className="text-3xl font-bold text-accent">{stats.roomsAvailable}</h3>
                 </div>
                 <div className="stats-card">
-                  <p className="text-text-muted text-sm mb-2">Pending Approvals</p>
+                  <p className="text-text-muted text-sm mb-2">Pending Verifications</p>
                   <h3 className="text-3xl font-bold text-orange-500">{stats.pendingVerifications}</h3>
-                  <p className="text-xs text-text-muted mt-2">Booking requests</p>
                 </div>
                 <div className="stats-card">
                   <p className="text-text-muted text-sm mb-2">Active Tenants</p>
                   <h3 className="text-3xl font-bold text-blue-600">{stats.activeTenants}</h3>
-                  <p className="text-xs text-text-muted mt-2">Occupied rooms</p>
-                </div>
-              </div>
-
-              {/* Quick Overview */}
-              <div className="grid md:grid-cols-2 gap-6">
-                {/* Hostels Summary */}
-                <div className="card">
-                  <h3 className="text-xl font-bold mb-4 text-text-dark">📋 Your Hostels</h3>
-                  {hostels.length === 0 ? (
-                    <div className="text-center py-8">
-                      <p className="text-text-muted mb-4">No hostels created yet</p>
-                      <button
-                        onClick={() => setActiveTab('create')}
-                        className="btn-primary"
-                      >
-                        Create First Hostel
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {hostels.map(h => (
-                        <div key={h._id} className="border rounded-lg p-3 hover:bg-gray-50">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <p className="font-semibold text-text-dark">{h.name}</p>
-                              <p className="text-sm text-text-muted">📍 {h.address?.city}, {h.address?.state}</p>
-                            </div>
-                            <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                              {allRooms.filter(r => r.hostelId === h._id).length} rooms
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Recent Tenants */}
-                <div className="card">
-                  <h3 className="text-xl font-bold mb-4 text-text-dark">👥 Recent Tenants</h3>
-                  {tenants.length === 0 ? (
-                    <div className="text-center py-8">
-                      <p className="text-text-muted">No tenant requests yet</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {tenants.slice(0, 5).map(t => (
-                        <div key={t._id} className="border rounded-lg p-3 hover:bg-gray-50">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <p className="font-semibold text-text-dark">{t.tenant?.name || 'Unknown'}</p>
-                              <p className="text-sm text-text-muted">{t.status || 'pending'}</p>
-                            </div>
-                            <span className={`text-xs px-2 py-1 rounded font-semibold ${
-                              t.status === 'active' ? 'bg-green-100 text-green-800' :
-                              t.status === 'pending_signatures' ? 'bg-yellow-100 text-yellow-800' :
-                              'bg-gray-100 text-gray-800'
-                            }`}>
-                              {t.status === 'active' ? '✓ Active' :
-                               t.status === 'pending_signatures' ? '⏳ Pending' :
-                               t.status}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               </div>
 
@@ -436,20 +364,27 @@ export default function OwnerDashboard() {
                     className="btn-primary"
                     onClick={() => setActiveTab('create')}
                   >
-                    ➕ Create New Hostel
+                    Create New Hostel
                   </button>
                   <button
                     className="btn-secondary"
                     onClick={() => setActiveTab('tenants')}
                   >
-                    👥 View Tenant Requests ({stats.pendingVerifications})
+                    View Tenant Requests
                   </button>
                   <button
                     className="btn-secondary"
-                    onClick={() => setActiveTab('hostels')}
+                    onClick={() => setActiveTab('media')}
                   >
-                    🏢 Manage Hostels
+                    Upload Media
                   </button>
+                </div>
+              </div>
+
+              <div className="card">
+                <h3 className="text-2xl font-bold mb-4 text-text-dark">Recent Activity</h3>
+                <div className="chart">
+                  <p className="p-4">Activity chart coming soon...</p>
                 </div>
               </div>
             </div>

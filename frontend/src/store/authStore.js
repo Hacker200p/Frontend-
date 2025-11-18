@@ -68,34 +68,15 @@ export const useAuthStore = create((set) => ({
     set({ loading: true, error: null })
     try {
       const response = await authAPI.login(credentials)
-      console.log('Login response:', response)
-      
-      // Handle response structure: response.data = { success, data: {...} }
-      const data = response.data?.data
-      if (!data || !data.token) {
-        throw new Error('Invalid response from server')
-      }
-      
-      const token = data.token
-      const user = {
-        _id: data._id,
-        name: data.name,
-        email: data.email,
-        phone: data.phone,
-        role: data.role,
-        userRole: data.role
-      }
-      
-      const mappedUser = mapBackendUserToFrontend(user)
-      set({ token, user: mappedUser, isAuthenticated: true, loading: false, error: null })
+      const { token, user, role } = response.data.data
+      const mappedUser = mapBackendUserToFrontend(user || { role })
+      set({ token, user: mappedUser, isAuthenticated: true, loading: false })
       localStorage.setItem('token', token)
       localStorage.setItem('user', JSON.stringify(mappedUser))
-      
       return response.data
     } catch (error) {
-      console.error('Login error:', error)
-      const errorMsg = error.response?.data?.message || error.message || 'Login failed'
-      set({ error: errorMsg, loading: false, user: null, isAuthenticated: false })
+      const errorMsg = error.response?.data?.message || 'Login failed'
+      set({ error: errorMsg, loading: false })
       throw error
     }
   },

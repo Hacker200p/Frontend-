@@ -2,8 +2,6 @@ import axios from 'axios'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
 
-console.log('🌐 API_BASE_URL:', API_BASE_URL)
-
 const api = axios.create({
   baseURL: `${API_BASE_URL}/api`,
   headers: {
@@ -32,7 +30,6 @@ const processQueue = (error, token = null) => {
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token')
-    console.log('📡 Request to:', config.url, 'Token exists:', !!token)
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -128,7 +125,7 @@ export const hostelAPI = {
 export const canteenAPI = {
   getMenus: () => api.get('/canteen/menus'),
   createOrder: (data) => api.post('/canteen/orders', data),
-  getOrders: () => api.get('/canteen/my-orders'),
+  getOrders: () => api.get('/canteen/orders'),
   verifyPayment: (data) => api.post('/canteen/orders/verify-payment', data),
   getMyCanteens: () => api.get('/canteen/my-canteens'),
   getAvailableCanteens: () => api.get('/canteen/available'), // For tenants
@@ -143,13 +140,6 @@ export const canteenAPI = {
     headers: data instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : {}
   }),
   deleteMenuItem: (itemId) => api.delete(`/canteen/menu/${itemId}`),
-  // Provider order management
-  getProviderOrders: (params) => api.get('/canteen/provider/orders', { params }),
-  updateOrderStatus: (orderId, data) => api.put(`/canteen/provider/orders/${orderId}/status`, data),
-  // Feedback APIs
-  submitOrderFeedback: (data) => api.post('/canteen/feedback', data),
-  getProviderFeedbacks: () => api.get('/canteen/provider/feedbacks'),
-  getCanteenFeedbacks: (canteenId) => api.get(`/canteen/feedbacks/${canteenId}`),
   // Subscription APIs
   updateSubscriptionPlans: (canteenId, data) => api.put(`/canteen/${canteenId}/subscription-plans`, data),
   getCanteenSubscriptions: (canteenId) => api.get(`/canteen/${canteenId}/subscriptions`),
@@ -182,8 +172,6 @@ export const tenantAPI = {
   getMyContracts: () => api.get('/tenant/contracts'),
   createBookingOrder: (data) => api.post('/tenant/create-booking-order', data),
   bookRoom: (data) => api.post('/tenant/book-room', data),
-  createExpenseOrder: (data) => api.post('/tenant/create-expense-order', data),
-  verifyExpensePayment: (data) => api.post('/tenant/verify-expense-payment', data),
 }
 
 // Owner API calls
