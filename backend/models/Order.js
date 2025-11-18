@@ -68,6 +68,15 @@ const orderSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Feedback',
   },
+  tenantRating: {
+    rating: {
+      type: Number,
+      min: 1,
+      max: 5,
+    },
+    comment: String,
+    ratedAt: Date,
+  },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Order', orderSchema);

@@ -107,6 +107,11 @@ export default function CanteenDashboard() {
   const [showDeliveryTimeModal, setShowDeliveryTimeModal] = useState(false)
   const [selectedOrderForDelivery, setSelectedOrderForDelivery] = useState(null)
   const [estimatedDeliveryMinutes, setEstimatedDeliveryMinutes] = useState(30)
+  const [showTenantRatingModal, setShowTenantRatingModal] = useState(false)
+  const [selectedOrderForRating, setSelectedOrderForRating] = useState(null)
+  const [tenantRating, setTenantRating] = useState(0)
+  const [tenantRatingComment, setTenantRatingComment] = useState('')
+  const [tenantRatingLoading, setTenantRatingLoading] = useState(false)
   const [canteenSettings, setCanteenSettings] = useState({
     isOpen: true,
     operatingHours: {
@@ -305,6 +310,33 @@ export default function CanteenDashboard() {
     setShowDeliveryTimeModal(false)
     setSelectedOrderForDelivery(null)
     setEstimatedDeliveryMinutes(30)
+  }
+
+  const submitTenantRating = async () => {
+    if (!selectedOrderForRating || tenantRating === 0) {
+      alert('Please select a rating')
+      return
+    }
+
+    try {
+      setTenantRatingLoading(true)
+      await canteenAPI.rateTenant(selectedOrderForRating._id, {
+        rating: tenantRating,
+        comment: tenantRatingComment.trim()
+      })
+      
+      alert('✓ Tenant rated successfully!')
+      setShowTenantRatingModal(false)
+      setSelectedOrderForRating(null)
+      setTenantRating(0)
+      setTenantRatingComment('')
+      await fetchOrders() // Refresh orders to show the rating
+    } catch (error) {
+      console.error('Error rating tenant:', error)
+      alert(error.response?.data?.message || 'Failed to rate tenant')
+    } finally {
+      setTenantRatingLoading(false)
+    }
   }
 
   const handleUpdateSubscriptionPlans = async () => {
@@ -988,8 +1020,49 @@ export default function CanteenDashboard() {
                           )}
 
                           {order.orderStatus === 'delivered' && order.deliveredAt && (
-                            <div className="text-sm text-green-600 font-semibold mt-2">
-                              ✓ Delivered on {new Date(order.deliveredAt).toLocaleString('en-IN')}
+                            <div className="mt-3 space-y-2">
+                              <div className="text-sm text-green-600 font-semibold">
+                                ✓ Delivered on {new Date(order.deliveredAt).toLocaleString('en-IN')}
+                              </div>
+                              
+                              {/* Tenant Rating Section */}
+                              {order.tenantRating && order.tenantRating.rating ? (
+                                <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-200 rounded-lg p-3">
+                                  <div className="flex items-start gap-3">
+                                    <div className="text-2xl">⭐</div>
+                                    <div className="flex-1">
+                                      <div className="flex items-center gap-2 mb-1">
+                                        <span className="font-bold text-yellow-900">Tenant Rating</span>
+                                        <div className="flex gap-1">
+                                          {[...Array(5)].map((_, i) => (
+                                            <span key={i} className={i < order.tenantRating.rating ? 'text-yellow-400 text-lg' : 'text-gray-300 text-lg'}>
+                                              ★
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                      {order.tenantRating.comment && (
+                                        <p className="text-sm text-yellow-900">{order.tenantRating.comment}</p>
+                                      )}
+                                      <p className="text-xs text-yellow-700 mt-1">
+                                        Rated on {new Date(order.tenantRating.ratedAt).toLocaleDateString('en-IN')}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => {
+                                    setSelectedOrderForRating(order)
+                                    setShowTenantRatingModal(true)
+                                    setTenantRating(0)
+                                    setTenantRatingComment('')
+                                  }}
+                                  className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 text-white py-2 px-4 rounded-lg hover:from-yellow-600 hover:to-orange-600 transition-all font-semibold text-sm flex items-center justify-center gap-2"
+                                >
+                                  ⭐ Rate Tenant
+                                </button>
+                              )}
                             </div>
                           )}
                         </div>
@@ -2918,6 +2991,124 @@ export default function CanteenDashboard() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Tenant Rating Modal */}
+      {showTenantRatingModal && selectedOrderForRating && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-gradient-to-r from-yellow-500 to-orange-500 text-white p-6 rounded-t-2xl">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-2xl font-bold">⭐ Rate Tenant</h2>
+                  <p className="text-sm text-white/90 mt-1">Order #{selectedOrderForRating.orderNumber}</p>
+                </div>
+                <button
+                  onClick={() => setShowTenantRatingModal(false)}
+                  className="text-white hover:bg-white/20 rounded-full p-2 transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Order Summary */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-sm font-semibold text-text-dark mb-2">
+                  Tenant: {selectedOrderForRating.tenant?.name} ({selectedOrderForRating.tenant?.phone})
+                </p>
+                <div className="space-y-1">
+                  {selectedOrderForRating.items.map((item, idx) => (
+                    <div key={idx} className="text-xs text-text-muted flex justify-between">
+                      <span>{item.name} x{item.quantity}</span>
+                      <span>₹{item.price * item.quantity}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="text-xs text-text-muted mt-2 pt-2 border-t border-gray-200">
+                  <span className="font-semibold">Delivered to:</span> Room {selectedOrderForRating.deliveryAddress?.roomNumber}, 
+                  Floor {selectedOrderForRating.deliveryAddress?.floor}
+                </div>
+              </div>
+
+              {/* Star Rating */}
+              <div>
+                <label className="block text-sm font-bold text-text-dark mb-3">
+                  How was your experience with this tenant?
+                </label>
+                <div className="flex justify-center gap-3 mb-2">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      onClick={() => setTenantRating(star)}
+                      className="text-5xl transition-all hover:scale-110"
+                    >
+                      <span className={star <= tenantRating ? 'text-yellow-400' : 'text-gray-300'}>
+                        ★
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <div className="text-center text-sm text-gray-600">
+                  {tenantRating === 0 && 'Tap to rate'}
+                  {tenantRating === 1 && '😞 Poor'}
+                  {tenantRating === 2 && '😐 Fair'}
+                  {tenantRating === 3 && '🙂 Good'}
+                  {tenantRating === 4 && '😊 Very Good'}
+                  {tenantRating === 5 && '🤩 Excellent'}
+                </div>
+              </div>
+
+              {/* Rating Guidelines */}
+              <div className="bg-blue-50 border-l-4 border-blue-500 rounded p-3">
+                <p className="text-xs text-blue-900 font-semibold mb-2">Rating Guidelines:</p>
+                <ul className="text-xs text-blue-800 space-y-1">
+                  <li>• Payment promptness</li>
+                  <li>• Communication & responsiveness</li>
+                  <li>• Following delivery instructions</li>
+                  <li>• Overall ordering experience</li>
+                </ul>
+              </div>
+
+              {/* Comment */}
+              <div>
+                <label className="block text-sm font-bold text-text-dark mb-2">
+                  Additional Comments (Optional)
+                </label>
+                <textarea
+                  value={tenantRatingComment}
+                  onChange={(e) => setTenantRatingComment(e.target.value.slice(0, 500))}
+                  placeholder="Share your experience with this tenant..."
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500 resize-none"
+                  rows="4"
+                  maxLength="500"
+                />
+                <p className="text-xs text-text-muted mt-1">
+                  {tenantRatingComment.length}/500 characters
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowTenantRatingModal(false)}
+                  className="flex-1 px-6 py-3 border-2 border-gray-300 text-text-dark rounded-lg hover:bg-gray-50 transition-colors font-semibold"
+                  disabled={tenantRatingLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={submitTenantRating}
+                  disabled={tenantRatingLoading || tenantRating === 0}
+                  className="flex-1 bg-gradient-to-r from-yellow-500 to-orange-500 text-white px-6 py-3 rounded-lg hover:from-yellow-600 hover:to-orange-600 transition-all font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {tenantRatingLoading ? 'Submitting...' : '✓ Submit Rating'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

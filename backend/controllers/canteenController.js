@@ -156,7 +156,13 @@ const addMenuItem = async (req, res) => {
     }
 
     const menuItem = await MenuItem.create({
-      ...req.body,
+      name: req.body.name,
+      description: req.body.description,
+      category: req.body.category,
+      foodType: req.body.foodType,
+      price: Number(req.body.price),
+      preparationTime: Number(req.body.preparationTime),
+      isAvailable: req.body.isAvailable === 'true' || req.body.isAvailable === true,
       ...imageData,
       canteen: canteen._id,
     });
@@ -226,7 +232,23 @@ const updateMenuItem = async (req, res) => {
       };
     }
 
-    const updatedItem = await MenuItem.findByIdAndUpdate(req.params.id, req.body, {
+    // Prepare update data with proper type conversions
+    const updateData = {
+      name: req.body.name,
+      description: req.body.description,
+      category: req.body.category,
+      foodType: req.body.foodType,
+      price: Number(req.body.price),
+      preparationTime: Number(req.body.preparationTime),
+      isAvailable: req.body.isAvailable === 'true' || req.body.isAvailable === true,
+    };
+
+    // Add image if it was uploaded
+    if (req.body.image) {
+      updateData.image = req.body.image;
+    }
+
+    const updatedItem = await MenuItem.findByIdAndUpdate(req.params.id, updateData, {
       new: true,
       runValidators: true,
     });
@@ -488,6 +510,7 @@ const getProviderOrders = async (req, res) => {
     const orders = await Order.find(query)
       .populate('tenant', 'name phone')
       .populate('canteen', 'name')
+      .populate('feedback')
       .sort({ createdAt: -1 });
 
     res.json({ success: true, data: orders });
@@ -557,6 +580,7 @@ const getMyOrders = async (req, res) => {
   try {
     const orders = await Order.find({ tenant: req.user.id })
       .populate('canteen', 'name')
+      .populate('feedback')
       .sort({ createdAt: -1 });
 
     res.json({ success: true, data: orders });
@@ -994,6 +1018,73 @@ const getCanteenFeedbacks = async (req, res) => {
   }
 };
 
+// @desc    Rate tenant after order delivery
+// @route   POST /api/canteen/orders/:orderId/rate-tenant
+// @access  Private/CanteenProvider
+const rateTenant = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { rating, comment } = req.body;
+
+    // Validate rating
+    if (!rating || rating < 1 || rating > 5) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Rating must be between 1 and 5' 
+      });
+    }
+
+    // Find the order
+    const order = await Order.findById(orderId).populate('canteen');
+
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found' });
+    }
+
+    // Check if the logged-in user is the canteen provider
+    if (order.canteen.provider.toString() !== req.user.id) {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Not authorized to rate this order' 
+      });
+    }
+
+    // Check if order is delivered
+    if (order.orderStatus !== 'delivered') {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Can only rate tenant after order is delivered' 
+      });
+    }
+
+    // Check if tenant has already been rated
+    if (order.tenantRating && order.tenantRating.rating) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Tenant has already been rated for this order' 
+      });
+    }
+
+    // Add tenant rating
+    order.tenantRating = {
+      rating,
+      comment: comment || '',
+      ratedAt: new Date(),
+    };
+
+    await order.save();
+
+    res.json({ 
+      success: true, 
+      message: 'Tenant rated successfully',
+      data: order 
+    });
+  } catch (error) {
+    console.error('Error rating tenant:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   createCanteen,
   getMyCanteens,
@@ -1016,4 +1107,5 @@ module.exports = {
   cancelSubscription,
   getAvailableCanteens,
   getCanteenFeedbacks,
+  rateTenant,
 };

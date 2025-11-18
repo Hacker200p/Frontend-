@@ -93,6 +93,19 @@ const userSchema = new mongoose.Schema({
     type: Date,
     select: false,
   },
+  // Phone change OTP fields
+  phoneChangeOTP: {
+    type: String,
+    select: false,
+  },
+  phoneChangeOTPExpiry: {
+    type: Date,
+    select: false,
+  },
+  pendingPhoneNumber: {
+    type: String,
+    select: false,
+  },
   createdAt: {
     type: Date,
     default: Date.now,

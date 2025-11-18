@@ -4,6 +4,8 @@ const Order = require('../models/Order');
 const Expense = require('../models/Expense');
 const Feedback = require('../models/Feedback');
 const Contract = require('../models/Contract');
+const DeletionRequest = require('../models/DeletionRequest');
+const User = require('../models/User');
 
 // @desc    Search hostels
 // @route   GET /api/tenant/hostels/search
@@ -99,20 +101,50 @@ const getMyExpenses = async (req, res) => {
 // @access  Private/Tenant
 const addExpense = async (req, res) => {
   try {
-    const { month, year, rent, electricity, water, food, maintenance, other } = req.body;
+    const { month, year, rent, electricity, water, food, maintenance, other, notes } = req.body;
+
+    console.log('Adding expense for user:', req.user.id);
+    console.log('Expense data:', { month, year, rent, electricity, water, food, maintenance, other, notes });
 
     const totalExpense = (rent || 0) + (electricity || 0) + (water || 0) + 
                         (food || 0) + (maintenance || 0) + 
-                        (other || []).reduce((sum, item) => sum + item.amount, 0);
+                        (other || []).reduce((sum, item) => sum + (item.amount || 0), 0);
 
     const expense = await Expense.findOneAndUpdate(
       { tenant: req.user.id, month, year },
-      { rent, electricity, water, food, maintenance, other, totalExpense },
+      { rent, electricity, water, food, maintenance, other, totalExpense, notes },
       { new: true, upsert: true, runValidators: true }
     );
 
+    console.log('Expense saved:', expense);
+
     res.status(201).json({ success: true, data: expense });
   } catch (error) {
+    console.error('Error adding expense:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Delete expense
+// @route   DELETE /api/tenant/expenses/:id
+// @access  Private/Tenant
+const deleteExpense = async (req, res) => {
+  try {
+    const expense = await Expense.findById(req.params.id);
+
+    if (!expense) {
+      return res.status(404).json({ success: false, message: 'Expense not found' });
+    }
+
+    if (expense.tenant.toString() !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Not authorized to delete this expense' });
+    }
+
+    await Expense.findByIdAndDelete(req.params.id);
+
+    res.json({ success: true, message: 'Expense deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting expense:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -480,14 +512,146 @@ const submitOrderFeedback = async (req, res) => {
   }
 };
 
+// @desc    Request account deletion
+// @route   POST /api/tenant/deletion-request
+// @access  Private/Tenant
+const requestAccountDeletion = async (req, res) => {
+  try {
+    const { reason } = req.body;
+
+    if (!reason || reason.trim().length === 0) {
+      return res.status(400).json({ success: false, message: 'Reason for deletion is required' });
+    }
+
+    // Get tenant's current hostel from active contract or user profile
+    const tenant = await User.findById(req.user.id);
+
+    // Get active contract if exists
+    const contract = await Contract.findOne({
+      tenant: req.user.id,
+      status: 'active'
+    }).populate('hostel owner');
+
+    // Determine hostel and owner from contract or user profile
+    let hostel, owner;
+    
+    if (contract) {
+      hostel = contract.hostel;
+      owner = contract.owner;
+    } else if (tenant.currentHostel) {
+      hostel = await Hostel.findById(tenant.currentHostel);
+      if (hostel) {
+        owner = await User.findById(hostel.owner);
+      }
+    }
+
+    if (!hostel || !owner) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'You must have an active contract or be associated with a hostel to request account deletion' 
+      });
+    }
+
+    // Check if there's already a pending request
+    const existingRequest = await DeletionRequest.findOne({
+      tenant: req.user.id,
+      status: 'pending'
+    });
+
+    if (existingRequest) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'You already have a pending deletion request' 
+      });
+    }
+
+    // Create deletion request
+    const deletionRequest = await DeletionRequest.create({
+      tenant: req.user.id,
+      hostel: hostel._id,
+      owner: owner._id,
+      contract: contract?._id,
+      reason: reason.trim()
+    });
+
+    await deletionRequest.populate([
+      { path: 'tenant', select: 'name email phone' },
+      { path: 'hostel', select: 'name address' },
+      { path: 'owner', select: 'name email phone' }
+    ]);
+
+    res.status(201).json({ 
+      success: true, 
+      message: 'Account deletion request sent to hostel owner',
+      data: deletionRequest 
+    });
+  } catch (error) {
+    console.error('Request account deletion error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Get my deletion request status
+// @route   GET /api/tenant/deletion-request
+// @access  Private/Tenant
+const getMyDeletionRequest = async (req, res) => {
+  try {
+    const deletionRequest = await DeletionRequest.findOne({
+      tenant: req.user.id,
+      status: 'pending'
+    })
+      .populate('hostel', 'name address')
+      .populate('owner', 'name phone email');
+
+    res.json({ success: true, data: deletionRequest });
+  } catch (error) {
+    console.error('Get deletion request error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Cancel deletion request
+// @route   DELETE /api/tenant/deletion-request/:id
+// @access  Private/Tenant
+const cancelDeletionRequest = async (req, res) => {
+  try {
+    const deletionRequest = await DeletionRequest.findOne({
+      _id: req.params.id,
+      tenant: req.user.id,
+      status: 'pending'
+    });
+
+    if (!deletionRequest) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Deletion request not found or already processed' 
+      });
+    }
+
+    await deletionRequest.deleteOne();
+
+    res.json({ 
+      success: true, 
+      message: 'Deletion request cancelled successfully' 
+    });
+  } catch (error) {
+    console.error('Cancel deletion request error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   searchHostels,
   getHostelDetails,
   getMyExpenses,
   addExpense,
+  deleteExpense,
   submitFeedback,
   submitOrderFeedback,
   getMyContracts,
   createBookingOrder,
   bookRoom,
+  requestAccountDeletion,
+  getMyDeletionRequest,
+  cancelDeletionRequest,
 };

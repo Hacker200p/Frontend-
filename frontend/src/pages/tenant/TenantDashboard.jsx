@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
 import { LogOut, Menu, X } from 'lucide-react'
-import { tenantAPI, canteenAPI } from '../../services/api'
+import api, { tenantAPI, canteenAPI, contractAPI } from '../../services/api'
 
 export default function TenantDashboard() {
   const navigate = useNavigate()
@@ -54,6 +54,56 @@ export default function TenantDashboard() {
   // Contracts state
   const [myContracts, setMyContracts] = useState([])
   const [contractsLoading, setContractsLoading] = useState(false)
+  const [selectedContract, setSelectedContract] = useState(null)
+  const [showContractModal, setShowContractModal] = useState(false)
+  const [signingContract, setSigningContract] = useState(false)
+
+  // Expenses state
+  const [myExpenses, setMyExpenses] = useState([])
+  const [expensesLoading, setExpensesLoading] = useState(false)
+  const [showAddExpenseModal, setShowAddExpenseModal] = useState(false)
+  const [editingExpense, setEditingExpense] = useState(null)
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1)
+  const [expenseForm, setExpenseForm] = useState({
+    month: new Date().getMonth() + 1,
+    year: new Date().getFullYear(),
+    rent: 0,
+    electricity: 0,
+    water: 0,
+    food: 0,
+    maintenance: 0,
+    other: [],
+    notes: ''
+  })
+
+  // Settings state
+  const [profileForm, setProfileForm] = useState({
+    name: user?.name || '',
+    email: user?.email || '',
+    phone: user?.phone || ''
+  })
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: ''
+  })
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [changingPassword, setChangingPassword] = useState(false)
+  
+  // Phone OTP verification state
+  const [phoneChangeOTP, setPhoneChangeOTP] = useState('')
+  const [showPhoneOTPModal, setShowPhoneOTPModal] = useState(false)
+  const [phoneOTPSent, setPhoneOTPSent] = useState(false)
+  const [sendingPhoneOTP, setSendingPhoneOTP] = useState(false)
+  const [verifyingPhoneOTP, setVerifyingPhoneOTP] = useState(false)
+  const [newPhoneNumber, setNewPhoneNumber] = useState('')
+  
+  // Deletion request state
+  const [showDeletionModal, setShowDeletionModal] = useState(false)
+  const [deletionReason, setDeletionReason] = useState('')
+  const [deletionRequest, setDeletionRequest] = useState(null)
+  const [sendingDeletionRequest, setSendingDeletionRequest] = useState(false)
 
   // Custom Order state
   const [cart, setCart] = useState([]) // { menuItem: item, quantity: number }
@@ -62,6 +112,7 @@ export default function TenantDashboard() {
   const [myOrders, setMyOrders] = useState([])
   const [ordersLoading, setOrdersLoading] = useState(false)
   const [showOrdersModal, setShowOrdersModal] = useState(false)
+  const [showOrderHistoryModal, setShowOrderHistoryModal] = useState(false)
 
   // Feedback state
   const [showFeedbackModal, setShowFeedbackModal] = useState(false)
@@ -141,6 +192,18 @@ export default function TenantDashboard() {
     return () => clearInterval(refreshInterval)
   }, [])
 
+  // Update profile form when user data changes
+  useEffect(() => {
+    if (user) {
+      setProfileForm({
+        name: user.name || '',
+        email: user.email || '',
+        phone: user.phone || ''
+      })
+      fetchDeletionRequestStatus()
+    }
+  }, [user])
+
   // Load data when switching tabs
   useEffect(() => {
     if (activeTab === 'canteen') {
@@ -156,6 +219,8 @@ export default function TenantDashboard() {
       return () => clearInterval(interval)
     } else if (activeTab === 'contracts') {
       fetchMyContracts()
+    } else if (activeTab === 'expenses') {
+      fetchMyExpenses()
     }
   }, [activeTab])
 
@@ -451,11 +516,321 @@ export default function TenantDashboard() {
     setContractsLoading(true)
     try {
       const response = await tenantAPI.getMyContracts()
-      setMyContracts(response.data?.data || [])
+      const contracts = response.data?.data || []
+      console.log('Fetched contracts:', contracts)
+      setMyContracts(Array.isArray(contracts) ? contracts : [])
     } catch (error) {
       console.error('Error fetching contracts:', error)
+      setMyContracts([])
+      alert('Failed to load contracts: ' + (error.response?.data?.message || error.message))
     } finally {
       setContractsLoading(false)
+    }
+  }
+
+  const handleViewContract = (contract) => {
+    setSelectedContract(contract)
+    setShowContractModal(true)
+  }
+
+  const handleSignContract = async (contractId) => {
+    if (!window.confirm('Are you sure you want to sign this contract? This action cannot be undone.')) {
+      return
+    }
+
+    setSigningContract(true)
+    try {
+      const response = await contractAPI.signContract(contractId)
+      alert('Contract signed successfully!')
+      fetchMyContracts()
+      setShowContractModal(false)
+    } catch (error) {
+      console.error('Error signing contract:', error)
+      alert(error.response?.data?.message || 'Failed to sign contract')
+    } finally {
+      setSigningContract(false)
+    }
+  }
+
+  const handleContactOwner = (contract) => {
+    const message = `Hi, I'm ${user?.name}, tenant of Room ${contract.room?.roomNumber} in ${contract.hostel?.name}. I would like to discuss about the contract.`
+    const phoneNumber = contract.owner?.phone?.replace(/\D/g, '')
+    const whatsappUrl = `https://wa.me/${phoneNumber}?text=${encodeURIComponent(message)}`
+    window.open(whatsappUrl, '_blank')
+  }
+
+  const fetchMyExpenses = async (year = selectedYear, month = null) => {
+    setExpensesLoading(true)
+    try {
+      let url = `/tenant/expenses?year=${year}`
+      if (month) url += `&month=${month}`
+      
+      const response = await tenantAPI.getExpenses()
+      setMyExpenses(response.data?.data || [])
+    } catch (error) {
+      console.error('Error fetching expenses:', error)
+      setMyExpenses([])
+    } finally {
+      setExpensesLoading(false)
+    }
+  }
+
+  const handleAddExpense = () => {
+    setEditingExpense(null)
+    setExpenseForm({
+      month: new Date().getMonth() + 1,
+      year: new Date().getFullYear(),
+      rent: 0,
+      electricity: 0,
+      water: 0,
+      food: 0,
+      maintenance: 0,
+      other: [],
+      notes: ''
+    })
+    setShowAddExpenseModal(true)
+  }
+
+  const handleEditExpense = (expense) => {
+    setEditingExpense(expense)
+    setExpenseForm({
+      month: expense.month,
+      year: expense.year,
+      rent: expense.rent || 0,
+      electricity: expense.electricity || 0,
+      water: expense.water || 0,
+      food: expense.food || 0,
+      maintenance: expense.maintenance || 0,
+      other: expense.other || [],
+      notes: expense.notes || ''
+    })
+    setShowAddExpenseModal(true)
+  }
+
+  const handleDeleteExpense = async (expenseId) => {
+    if (!window.confirm('Are you sure you want to delete this expense? This action cannot be undone.')) {
+      return
+    }
+
+    try {
+      await tenantAPI.deleteExpense(expenseId)
+      alert('Expense deleted successfully!')
+      fetchMyExpenses()
+    } catch (error) {
+      console.error('Error deleting expense:', error)
+      alert(error.response?.data?.message || 'Failed to delete expense')
+    }
+  }
+
+  const handleExpenseFormChange = (field, value) => {
+    setExpenseForm(prev => ({
+      ...prev,
+      [field]: value
+    }))
+  }
+
+  const handleAddOtherExpense = () => {
+    setExpenseForm(prev => ({
+      ...prev,
+      other: [...prev.other, { description: '', amount: 0 }]
+    }))
+  }
+
+  const handleRemoveOtherExpense = (index) => {
+    setExpenseForm(prev => ({
+      ...prev,
+      other: prev.other.filter((_, i) => i !== index)
+    }))
+  }
+
+  const handleOtherExpenseChange = (index, field, value) => {
+    setExpenseForm(prev => ({
+      ...prev,
+      other: prev.other.map((item, i) => 
+        i === index ? { ...item, [field]: value } : item
+      )
+    }))
+  }
+
+  const handleSubmitExpense = async () => {
+    try {
+      console.log('Submitting expense:', expenseForm)
+      const response = await tenantAPI.addExpense(expenseForm)
+      console.log('Expense saved:', response)
+      alert('Expense saved successfully!')
+      setShowAddExpenseModal(false)
+      fetchMyExpenses()
+    } catch (error) {
+      console.error('Error saving expense:', error)
+      console.error('Error response:', error.response)
+      const errorMsg = error.response?.data?.message || error.message || 'Failed to save expense'
+      alert('Failed to save expense: ' + errorMsg)
+    }
+  }
+
+  const handleProfileFormChange = (field, value) => {
+    setProfileForm(prev => ({
+      ...prev,
+      [field]: value
+    }))
+  }
+
+  const handlePasswordFormChange = (field, value) => {
+    setPasswordForm(prev => ({
+      ...prev,
+      [field]: value
+    }))
+  }
+
+  const handleUpdateProfile = async () => {
+    // Check if phone number has changed
+    if (profileForm.phone !== user?.phone) {
+      // Validate phone number
+      if (!/^[0-9]{10}$/.test(profileForm.phone)) {
+        alert('Phone number must be 10 digits')
+        return
+      }
+      // Show OTP modal for phone verification
+      setNewPhoneNumber(profileForm.phone)
+      setShowPhoneOTPModal(true)
+      return
+    }
+    
+    // Only email can be updated without OTP (name is read-only)
+    setSavingProfile(true)
+    try {
+      const response = await api.put('/auth/profile', { email: profileForm.email })
+      alert('Email updated successfully!')
+      // Update local user data
+      if (response.data?.data) {
+        useAuthStore.getState().setUser(response.data.data)
+      }
+    } catch (error) {
+      console.error('Error updating profile:', error)
+      alert(error.response?.data?.message || 'Failed to update profile')
+    } finally {
+      setSavingProfile(false)
+    }
+  }
+  
+  const handleSendPhoneOTP = async () => {
+    setSendingPhoneOTP(true)
+    try {
+      await api.post('/auth/send-phone-change-otp', { newPhone: newPhoneNumber })
+      setPhoneOTPSent(true)
+      alert('OTP sent to your new phone number!')
+    } catch (error) {
+      console.error('Error sending OTP:', error)
+      alert(error.response?.data?.message || 'Failed to send OTP')
+    } finally {
+      setSendingPhoneOTP(false)
+    }
+  }
+  
+  const handleVerifyPhoneOTP = async () => {
+    if (!phoneChangeOTP || phoneChangeOTP.length !== 6) {
+      alert('Please enter a valid 6-digit OTP')
+      return
+    }
+    
+    setVerifyingPhoneOTP(true)
+    try {
+      const response = await api.post('/auth/verify-phone-change-otp', {
+        newPhone: newPhoneNumber,
+        otp: phoneChangeOTP
+      })
+      alert('Phone number updated successfully!')
+      // Update local user data
+      if (response.data?.data) {
+        useAuthStore.getState().setUser(response.data.data)
+        setProfileForm(prev => ({ ...prev, phone: response.data.data.phone }))
+      }
+      // Close modal and reset state
+      setShowPhoneOTPModal(false)
+      setPhoneChangeOTP('')
+      setPhoneOTPSent(false)
+      setNewPhoneNumber('')
+    } catch (error) {
+      console.error('Error verifying OTP:', error)
+      alert(error.response?.data?.message || 'Failed to verify OTP')
+    } finally {
+      setVerifyingPhoneOTP(false)
+    }
+  }
+
+  const handleChangePassword = async () => {
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      alert('New password and confirm password do not match!')
+      return
+    }
+
+    if (passwordForm.newPassword.length < 6) {
+      alert('Password must be at least 6 characters long!')
+      return
+    }
+
+    setChangingPassword(true)
+    try {
+      await api.put('/auth/change-password', {
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword
+      })
+      alert('Password changed successfully!')
+      setPasswordForm({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: ''
+      })
+    } catch (error) {
+      console.error('Error changing password:', error)
+      alert(error.response?.data?.message || 'Failed to change password')
+    } finally {
+      setChangingPassword(false)
+    }
+  }
+  
+  const fetchDeletionRequestStatus = async () => {
+    try {
+      const response = await tenantAPI.getDeletionRequest()
+      if (response.data?.data) {
+        setDeletionRequest(response.data.data)
+      }
+    } catch (error) {
+      console.error('Error fetching deletion request:', error)
+    }
+  }
+  
+  const handleRequestDeletion = async () => {
+    if (!deletionReason || deletionReason.trim().length === 0) {
+      alert('Please provide a reason for account deletion')
+      return
+    }
+    
+    setSendingDeletionRequest(true)
+    try {
+      const response = await tenantAPI.requestDeletion({ reason: deletionReason })
+      alert('Deletion request sent to hostel owner. You will be notified once it is reviewed.')
+      setDeletionRequest(response.data?.data)
+      setShowDeletionModal(false)
+      setDeletionReason('')
+    } catch (error) {
+      console.error('Error requesting deletion:', error)
+      alert(error.response?.data?.message || 'Failed to send deletion request')
+    } finally {
+      setSendingDeletionRequest(false)
+    }
+  }
+  
+  const handleCancelDeletionRequest = async () => {
+    if (!confirm('Are you sure you want to cancel your deletion request?')) return
+    
+    try {
+      await tenantAPI.cancelDeletionRequest(deletionRequest._id)
+      alert('Deletion request cancelled')
+      setDeletionRequest(null)
+    } catch (error) {
+      console.error('Error cancelling deletion request:', error)
+      alert(error.response?.data?.message || 'Failed to cancel deletion request')
     }
   }
 
@@ -1748,7 +2123,14 @@ export default function TenantDashboard() {
                   className="bg-blue-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-blue-600 transition flex items-center gap-2"
                 >
                   <span className="text-lg">📋</span>
-                  My Orders
+                  Current Orders
+                </button>
+                <button
+                  onClick={() => setShowOrderHistoryModal(true)}
+                  className="bg-purple-500 text-white px-4 py-2 rounded-lg font-semibold hover:bg-purple-600 transition flex items-center gap-2"
+                >
+                  <span className="text-lg">📚</span>
+                  Order History
                 </button>
                 <button
                   onClick={() => setShowCartModal(true)}
@@ -2116,35 +2498,35 @@ export default function TenantDashboard() {
                       <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4 border-2 border-green-200">
                         <div className="text-green-600 text-2xl mb-2">✅</div>
                         <div className="text-2xl font-bold text-green-700">
-                          {myContracts.filter(c => c.status === 'active').length}
+                          {myContracts.filter(c => c && c.status === 'active').length}
                         </div>
                         <div className="text-xs text-green-600 font-medium">Active</div>
                       </div>
                       <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-xl p-4 border-2 border-yellow-200">
                         <div className="text-yellow-600 text-2xl mb-2">⏳</div>
                         <div className="text-2xl font-bold text-yellow-700">
-                          {myContracts.filter(c => c.status === 'pending_signatures').length}
+                          {myContracts.filter(c => c && c.status === 'pending_signatures').length}
                         </div>
                         <div className="text-xs text-yellow-600 font-medium">Pending</div>
                       </div>
                       <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 border-2 border-blue-200">
                         <div className="text-blue-600 text-2xl mb-2">📝</div>
                         <div className="text-2xl font-bold text-blue-700">
-                          {myContracts.filter(c => c.status === 'draft').length}
+                          {myContracts.filter(c => c && c.status === 'draft').length}
                         </div>
                         <div className="text-xs text-blue-600 font-medium">Draft</div>
                       </div>
                       <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-4 border-2 border-gray-200">
                         <div className="text-gray-600 text-2xl mb-2">🏁</div>
                         <div className="text-2xl font-bold text-gray-700">
-                          {myContracts.filter(c => c.status === 'completed' || c.status === 'terminated').length}
+                          {myContracts.filter(c => c && (c.status === 'completed' || c.status === 'terminated')).length}
                         </div>
                         <div className="text-xs text-gray-600 font-medium">Ended</div>
                       </div>
                     </div>
 
                     {/* Contracts List */}
-                    {myContracts.map(contract => (
+                    {myContracts.filter(c => c && c._id).map(contract => (
                       <div key={contract._id} className={`border-2 rounded-xl overflow-hidden ${
                         contract.status === 'active' ? 'border-green-300 bg-green-50' :
                         contract.status === 'pending_signatures' ? 'border-yellow-300 bg-yellow-50' :
@@ -2164,7 +2546,9 @@ export default function TenantDashboard() {
                                 {contract.hostel?.name || 'Hostel Name'}
                               </h4>
                               <p className="text-sm text-text-muted">
-                                📍 {contract.hostel?.address}, {contract.hostel?.city}
+                                📍 {typeof contract.hostel?.address === 'object' 
+                                  ? `${contract.hostel?.address?.street || ''}, ${contract.hostel?.address?.city || ''}, ${contract.hostel?.address?.state || ''}`.replace(/, ,/g, ',').trim()
+                                  : contract.hostel?.address || 'Address not available'}
                               </p>
                             </div>
                             <span className={`px-3 py-1 rounded-full text-xs font-bold ${
@@ -2298,7 +2682,7 @@ export default function TenantDashboard() {
                                 {contract.terms.map((term, idx) => (
                                   <li key={idx} className="flex items-start gap-2">
                                     <span className="text-primary mt-1">•</span>
-                                    <span>{term}</span>
+                                    <span>{typeof term === 'string' ? term : (term.description || term.clause || '')}</span>
                                   </li>
                                 ))}
                               </ul>
@@ -2306,14 +2690,246 @@ export default function TenantDashboard() {
                           )}
 
                           {/* Actions */}
-                          {contract.status === 'active' && (
-                            <div className="mt-6 pt-6 border-t flex gap-3">
-                              <button className="btn-primary flex-1">
-                                📄 View Full Contract
+                          <div className="mt-6 pt-6 border-t flex flex-wrap gap-3">
+                            <button 
+                              onClick={() => handleViewContract(contract)}
+                              className="btn-primary flex-1 min-w-[200px]"
+                            >
+                              📄 View Full Contract
+                            </button>
+                            <button 
+                              onClick={() => handleContactOwner(contract)}
+                              className="btn-secondary flex-1 min-w-[200px]"
+                            >
+                              📞 Contact Owner
+                            </button>
+                            {contract.status === 'pending_signatures' && !contract.tenantSignature?.signed && (
+                              <button 
+                                onClick={() => handleSignContract(contract._id)}
+                                disabled={signingContract}
+                                className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors font-semibold flex-1 min-w-[200px] disabled:opacity-50"
+                              >
+                                {signingContract ? '✍️ Signing...' : '✍️ Sign Contract'}
                               </button>
-                              <button className="btn-secondary flex-1">
-                                📞 Contact Owner
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'expenses' && (
+            <div className="space-y-6">
+              <div className="card">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h3 className="text-2xl font-bold text-text-dark">💰 My Expenses</h3>
+                    <p className="text-sm text-gray-600 mt-1">Track your monthly expenses and budget</p>
+                  </div>
+                  <button
+                    onClick={handleAddExpense}
+                    className="btn-primary"
+                  >
+                    ➕ Add Expense
+                  </button>
+                </div>
+
+                {/* Year Filter */}
+                <div className="flex gap-2 mb-6">
+                  {[2025, 2024, 2023].map(year => (
+                    <button
+                      key={year}
+                      onClick={() => {
+                        setSelectedYear(year)
+                        fetchMyExpenses(year)
+                      }}
+                      className={`px-4 py-2 rounded-lg font-semibold transition ${
+                        selectedYear === year
+                          ? 'bg-primary text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      {year}
+                    </button>
+                  ))}
+                </div>
+
+                {expensesLoading ? (
+                  <div className="text-center py-12">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+                    <p className="text-text-muted mt-4">Loading expenses...</p>
+                  </div>
+                ) : myExpenses.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="text-6xl mb-4">📊</div>
+                    <p className="text-text-muted text-lg mb-4">No expenses recorded for {selectedYear}</p>
+                    <button onClick={handleAddExpense} className="btn-primary">
+                      Add Your First Expense
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Summary Cards */}
+                    <div className="grid md:grid-cols-4 gap-4 mb-6">
+                      <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 border-2 border-blue-200">
+                        <div className="text-blue-600 text-2xl mb-2">💵</div>
+                        <div className="text-2xl font-bold text-blue-700">
+                          ₹{myExpenses.reduce((sum, e) => sum + (e.totalExpense || 0), 0).toLocaleString()}
+                        </div>
+                        <div className="text-xs text-blue-600 font-medium">Total Expenses</div>
+                      </div>
+                      <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4 border-2 border-green-200">
+                        <div className="text-green-600 text-2xl mb-2">📅</div>
+                        <div className="text-2xl font-bold text-green-700">
+                          {myExpenses.length}
+                        </div>
+                        <div className="text-xs text-green-600 font-medium">Months Recorded</div>
+                      </div>
+                      <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4 border-2 border-purple-200">
+                        <div className="text-purple-600 text-2xl mb-2">📊</div>
+                        <div className="text-2xl font-bold text-purple-700">
+                          ₹{Math.round(myExpenses.reduce((sum, e) => sum + (e.totalExpense || 0), 0) / myExpenses.length).toLocaleString()}
+                        </div>
+                        <div className="text-xs text-purple-600 font-medium">Avg Per Month</div>
+                      </div>
+                      <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-4 border-2 border-orange-200">
+                        <div className="text-orange-600 text-2xl mb-2">🏠</div>
+                        <div className="text-2xl font-bold text-orange-700">
+                          ₹{Math.round(myExpenses.reduce((sum, e) => sum + (e.rent || 0), 0) / myExpenses.length).toLocaleString()}
+                        </div>
+                        <div className="text-xs text-orange-600 font-medium">Avg Rent</div>
+                      </div>
+                    </div>
+
+                    {/* Monthly Expenses */}
+                    {myExpenses.map(expense => (
+                      <div key={expense._id} className="border-2 border-gray-200 rounded-xl overflow-hidden bg-white">
+                        <div className="bg-gradient-to-r from-primary to-blue-600 text-white p-4">
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <h4 className="font-bold text-xl">
+                                {new Date(expense.year, expense.month - 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                              </h4>
+                              <p className="text-sm opacity-90">Monthly Expense Report</p>
+                            </div>
+                            <div className="text-right mr-4">
+                              <p className="text-3xl font-bold">₹{expense.totalExpense.toLocaleString()}</p>
+                              <p className="text-xs opacity-90">Total</p>
+                            </div>
+                            <div className="flex flex-col gap-2">
+                              <button
+                                onClick={() => handleEditExpense(expense)}
+                                className="bg-white text-primary px-3 py-1 rounded-lg hover:bg-blue-50 transition font-semibold text-sm"
+                              >
+                                ✏️ Edit
                               </button>
+                              <button
+                                onClick={() => handleDeleteExpense(expense._id)}
+                                className="bg-red-500 text-white px-3 py-1 rounded-lg hover:bg-red-600 transition font-semibold text-sm"
+                              >
+                                🗑️ Delete
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="p-6">
+                          <div className="grid md:grid-cols-3 gap-4">
+                            {/* Rent */}
+                            <div className="bg-orange-50 rounded-lg p-4 border border-orange-200">
+                              <div className="flex items-center gap-3">
+                                <div className="text-3xl">🏠</div>
+                                <div className="flex-1">
+                                  <p className="text-xs text-gray-600">Rent</p>
+                                  <p className="text-2xl font-bold text-orange-700">₹{expense.rent}</p>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Electricity */}
+                            <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
+                              <div className="flex items-center gap-3">
+                                <div className="text-3xl">⚡</div>
+                                <div className="flex-1">
+                                  <p className="text-xs text-gray-600">Electricity</p>
+                                  <p className="text-2xl font-bold text-yellow-700">₹{expense.electricity}</p>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Water */}
+                            <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                              <div className="flex items-center gap-3">
+                                <div className="text-3xl">💧</div>
+                                <div className="flex-1">
+                                  <p className="text-xs text-gray-600">Water</p>
+                                  <p className="text-2xl font-bold text-blue-700">₹{expense.water}</p>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Food */}
+                            <div className="bg-green-50 rounded-lg p-4 border border-green-200">
+                              <div className="flex items-center gap-3">
+                                <div className="text-3xl">🍽️</div>
+                                <div className="flex-1">
+                                  <p className="text-xs text-gray-600">Food</p>
+                                  <p className="text-2xl font-bold text-green-700">₹{expense.food}</p>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Maintenance */}
+                            <div className="bg-purple-50 rounded-lg p-4 border border-purple-200">
+                              <div className="flex items-center gap-3">
+                                <div className="text-3xl">🔧</div>
+                                <div className="flex-1">
+                                  <p className="text-xs text-gray-600">Maintenance</p>
+                                  <p className="text-2xl font-bold text-purple-700">₹{expense.maintenance}</p>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Other Expenses */}
+                            {expense.other && expense.other.length > 0 && (
+                              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                                <div className="flex items-center gap-3">
+                                  <div className="text-3xl">📝</div>
+                                  <div className="flex-1">
+                                    <p className="text-xs text-gray-600">Other</p>
+                                    <p className="text-2xl font-bold text-gray-700">
+                                      ₹{expense.other.reduce((sum, item) => sum + item.amount, 0)}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Other Expenses Details */}
+                          {expense.other && expense.other.length > 0 && (
+                            <div className="mt-4 pt-4 border-t">
+                              <h5 className="font-semibold text-gray-700 mb-2">Other Expenses:</h5>
+                              <div className="space-y-1">
+                                {expense.other.map((item, idx) => (
+                                  <div key={idx} className="flex justify-between text-sm">
+                                    <span className="text-gray-600">{item.description}</span>
+                                    <span className="font-semibold text-gray-800">₹{item.amount}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Notes */}
+                          {expense.notes && (
+                            <div className="mt-4 pt-4 border-t">
+                              <h5 className="font-semibold text-gray-700 mb-2">📝 Notes:</h5>
+                              <p className="text-sm text-gray-600 italic">{expense.notes}</p>
                             </div>
                           )}
                         </div>
@@ -2325,17 +2941,189 @@ export default function TenantDashboard() {
             </div>
           )}
 
-          {activeTab === 'expenses' && (
-            <div className="card">
-              <h3 className="text-2xl font-bold mb-4 text-text-dark">My Expenses</h3>
-              <p className="text-text-muted">Coming soon...</p>
-            </div>
-          )}
-
           {activeTab === 'feedback' && (
-            <div className="card">
-              <h3 className="text-2xl font-bold mb-4 text-text-dark">Feedback & Suggestions</h3>
-              <p className="text-text-muted">Coming soon...</p>
+            <div className="space-y-6">
+              <div className="card">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h3 className="text-2xl font-bold text-text-dark">⭐ My Feedbacks</h3>
+                    <p className="text-sm text-gray-600 mt-1">View all your order ratings and reviews</p>
+                  </div>
+                  <button
+                    onClick={fetchMyOrders}
+                    className="btn-secondary text-sm"
+                  >
+                    🔄 Refresh
+                  </button>
+                </div>
+
+                {ordersLoading ? (
+                  <div className="text-center py-12">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+                    <p className="text-text-muted">Loading feedbacks...</p>
+                  </div>
+                ) : myOrders.filter(o => o.orderStatus === 'delivered' && o.feedback).length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="text-6xl mb-4">⭐</div>
+                    <p className="text-text-muted text-lg">No feedbacks yet</p>
+                    <p className="text-sm text-gray-500 mt-2">Your order ratings will appear here after you submit feedback</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {myOrders
+                      .filter(o => o.orderStatus === 'delivered' && o.feedback)
+                      .sort((a, b) => new Date(b.feedback.createdAt) - new Date(a.feedback.createdAt))
+                      .map(order => (
+                        <div key={order._id} className="border-2 rounded-xl p-5 hover:shadow-lg transition bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200">
+                          <div className="flex items-start justify-between mb-4">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-3 mb-2">
+                                <h4 className="font-bold text-lg text-text-dark">Order #{order.orderNumber}</h4>
+                                <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">
+                                  Delivered
+                                </span>
+                              </div>
+                              <div className="text-sm text-text-muted space-y-1">
+                                <p><span className="font-semibold">🍽️ Canteen:</span> {order.canteen?.name}</p>
+                                <p><span className="font-semibold">📅 Ordered:</span> {new Date(order.createdAt).toLocaleDateString('en-IN', { 
+                                  day: 'numeric', 
+                                  month: 'short', 
+                                  year: 'numeric',
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}</p>
+                                <p><span className="font-semibold">✓ Delivered:</span> {new Date(order.deliveredAt).toLocaleDateString('en-IN', { 
+                                  day: 'numeric', 
+                                  month: 'short', 
+                                  year: 'numeric'
+                                })}</p>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-2xl font-bold text-primary">₹{order.totalAmount}</p>
+                            </div>
+                          </div>
+
+                          {/* Order Items Summary */}
+                          <div className="bg-white rounded-lg p-3 mb-4 border border-yellow-200">
+                            <p className="text-xs font-semibold text-text-dark mb-2">Items Ordered:</p>
+                            <div className="space-y-1">
+                              {order.items.map((item, idx) => (
+                                <div key={idx} className="flex justify-between text-sm">
+                                  <span className="text-text-dark">{item.name} x{item.quantity}</span>
+                                  <span className="font-semibold">₹{item.price * item.quantity}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Your Feedback */}
+                          <div className="bg-gradient-to-r from-yellow-100 to-orange-100 rounded-lg p-4 border-2 border-yellow-300">
+                            <div className="flex items-start gap-3">
+                              <div className="text-3xl">⭐</div>
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <span className="font-bold text-yellow-900 text-lg">Your Rating</span>
+                                  <div className="flex gap-1">
+                                    {[...Array(5)].map((_, i) => (
+                                      <span key={i} className={i < order.feedback.rating ? 'text-yellow-500 text-xl' : 'text-gray-300 text-xl'}>
+                                        ★
+                                      </span>
+                                    ))}
+                                  </div>
+                                  <span className="ml-2 text-yellow-900 font-bold">
+                                    ({order.feedback.rating}/5)
+                                  </span>
+                                </div>
+                                <p className="text-sm text-yellow-900 italic leading-relaxed">"{order.feedback.comment}"</p>
+                                <p className="text-xs text-yellow-700 mt-3 font-semibold">
+                                  📅 Submitted on {new Date(order.feedback.createdAt).toLocaleDateString('en-IN', {
+                                    day: 'numeric',
+                                    month: 'long',
+                                    year: 'numeric'
+                                  })}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Provider's Rating of You */}
+                          {order.tenantRating && order.tenantRating.rating && (
+                            <div className="bg-gradient-to-r from-blue-100 to-purple-100 rounded-lg p-4 border-2 border-blue-300 mt-3">
+                              <div className="flex items-start gap-3">
+                                <div className="text-3xl">👨‍🍳</div>
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <span className="font-bold text-blue-900 text-lg">Provider's Rating for You</span>
+                                    <div className="flex gap-1">
+                                      {[...Array(5)].map((_, i) => (
+                                        <span key={i} className={i < order.tenantRating.rating ? 'text-blue-500 text-xl' : 'text-gray-300 text-xl'}>
+                                          ★
+                                        </span>
+                                      ))}
+                                    </div>
+                                    <span className="ml-2 text-blue-900 font-bold">
+                                      ({order.tenantRating.rating}/5)
+                                    </span>
+                                  </div>
+                                  {order.tenantRating.comment && (
+                                    <p className="text-sm text-blue-900 italic leading-relaxed">"{order.tenantRating.comment}"</p>
+                                  )}
+                                  <p className="text-xs text-blue-700 mt-3 font-semibold">
+                                    📅 Rated on {new Date(order.tenantRating.ratedAt).toLocaleDateString('en-IN', {
+                                      day: 'numeric',
+                                      month: 'long',
+                                      year: 'numeric'
+                                    })}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Feedback Stats */}
+              {myOrders.filter(o => o.orderStatus === 'delivered' && o.feedback).length > 0 && (
+                <div className="grid md:grid-cols-3 gap-6">
+                  <div className="bg-white rounded-xl p-6 shadow-lg border-l-4 border-yellow-500">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-text-muted text-sm font-semibold">Total Feedbacks</p>
+                      <span className="text-3xl">⭐</span>
+                    </div>
+                    <h3 className="text-4xl font-bold text-yellow-600">
+                      {myOrders.filter(o => o.orderStatus === 'delivered' && o.feedback).length}
+                    </h3>
+                  </div>
+
+                  <div className="bg-white rounded-xl p-6 shadow-lg border-l-4 border-green-500">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-text-muted text-sm font-semibold">Average Rating</p>
+                      <span className="text-3xl">📊</span>
+                    </div>
+                    <h3 className="text-4xl font-bold text-green-600">
+                      {(myOrders
+                        .filter(o => o.orderStatus === 'delivered' && o.feedback)
+                        .reduce((sum, o) => sum + o.feedback.rating, 0) / 
+                        myOrders.filter(o => o.orderStatus === 'delivered' && o.feedback).length
+                      ).toFixed(1)}/5
+                    </h3>
+                  </div>
+
+                  <div className="bg-white rounded-xl p-6 shadow-lg border-l-4 border-blue-500">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-text-muted text-sm font-semibold">Provider Ratings</p>
+                      <span className="text-3xl">👨‍🍳</span>
+                    </div>
+                    <h3 className="text-4xl font-bold text-blue-600">
+                      {myOrders.filter(o => o.orderStatus === 'delivered' && o.tenantRating?.rating).length}
+                    </h3>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -2347,9 +3135,282 @@ export default function TenantDashboard() {
           )}
 
           {activeTab === 'settings' && (
-            <div className="card">
-              <h3 className="text-2xl font-bold mb-4 text-text-dark">Settings</h3>
-              <p className="text-text-muted">Coming soon...</p>
+            <div className="space-y-6">
+              {/* Profile Settings */}
+              <div className="card">
+                <h3 className="text-2xl font-bold mb-6 text-text-dark flex items-center gap-2">
+                  👤 Profile Settings
+                </h3>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Full Name</label>
+                    <input
+                      type="text"
+                      value={profileForm.name}
+                      readOnly
+                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg bg-gray-100 cursor-not-allowed"
+                      placeholder="Enter your full name"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Name cannot be changed</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Email Address</label>
+                    <input
+                      type="email"
+                      value={profileForm.email}
+                      onChange={(e) => handleProfileFormChange('email', e.target.value)}
+                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-primary focus:outline-none"
+                      placeholder="Enter your email"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Phone Number</label>
+                    <input
+                      type="tel"
+                      value={profileForm.phone}
+                      onChange={(e) => handleProfileFormChange('phone', e.target.value)}
+                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-primary focus:outline-none"
+                      placeholder="Enter your phone number"
+                      maxLength="10"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">Changing phone number requires OTP verification</p>
+                  </div>
+
+                  <button
+                    onClick={handleUpdateProfile}
+                    disabled={savingProfile}
+                    className="btn-primary disabled:opacity-50"
+                  >
+                    {savingProfile ? 'Saving...' : 'Save Profile'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Password Settings */}
+              <div className="card">
+                <h3 className="text-2xl font-bold mb-6 text-text-dark flex items-center gap-2">
+                  🔒 Change Password
+                </h3>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Current Password</label>
+                    <input
+                      type="password"
+                      value={passwordForm.currentPassword}
+                      onChange={(e) => handlePasswordFormChange('currentPassword', e.target.value)}
+                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-primary focus:outline-none"
+                      placeholder="Enter current password"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">New Password</label>
+                    <input
+                      type="password"
+                      value={passwordForm.newPassword}
+                      onChange={(e) => handlePasswordFormChange('newPassword', e.target.value)}
+                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-primary focus:outline-none"
+                      placeholder="Enter new password (min 6 characters)"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Confirm New Password</label>
+                    <input
+                      type="password"
+                      value={passwordForm.confirmPassword}
+                      onChange={(e) => handlePasswordFormChange('confirmPassword', e.target.value)}
+                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-primary focus:outline-none"
+                      placeholder="Confirm new password"
+                    />
+                  </div>
+
+                  {passwordForm.newPassword && passwordForm.confirmPassword && 
+                   passwordForm.newPassword !== passwordForm.confirmPassword && (
+                    <p className="text-red-600 text-sm">Passwords do not match!</p>
+                  )}
+
+                  <button
+                    onClick={handleChangePassword}
+                    disabled={changingPassword || !passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword}
+                    className="btn-primary disabled:opacity-50"
+                  >
+                    {changingPassword ? 'Changing...' : 'Change Password'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Account Information */}
+              <div className="card">
+                <h3 className="text-2xl font-bold mb-6 text-text-dark flex items-center gap-2">
+                  ℹ️ Account Information
+                </h3>
+                
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="text-sm text-gray-600">Account Type</p>
+                      <p className="font-semibold text-gray-800">Tenant</p>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="text-sm text-gray-600">Member Since</p>
+                      <p className="font-semibold text-gray-800">
+                        {user?.createdAt ? new Date(user.createdAt).toLocaleDateString('en-IN', {
+                          day: 'numeric',
+                          month: 'long',
+                          year: 'numeric'
+                        }) : 'N/A'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="text-sm text-gray-600">Account Status</p>
+                      <p className="font-semibold text-green-600">Active</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Preferences */}
+              <div className="card">
+                <h3 className="text-2xl font-bold mb-6 text-text-dark flex items-center gap-2">
+                  ⚙️ Preferences
+                </h3>
+                
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="font-semibold text-gray-800">Email Notifications</p>
+                      <p className="text-sm text-gray-600">Receive updates about bookings and orders</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" defaultChecked />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                    </label>
+                  </div>
+
+                  <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="font-semibold text-gray-800">SMS Notifications</p>
+                      <p className="text-sm text-gray-600">Get SMS alerts for important updates</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" defaultChecked />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                    </label>
+                  </div>
+
+                  <div className="flex justify-between items-center p-4 bg-gray-50 rounded-lg">
+                    <div>
+                      <p className="font-semibold text-gray-800">Order Updates</p>
+                      <p className="text-sm text-gray-600">Track your food order status</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input type="checkbox" className="sr-only peer" defaultChecked />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Danger Zone */}
+              <div className="card border-2 border-red-200 bg-red-50">
+                <h3 className="text-2xl font-bold mb-6 text-red-800 flex items-center gap-2">
+                  ⚠️ Danger Zone
+                </h3>
+                
+                <div className="space-y-4">
+                  <div className="p-4 bg-white rounded-lg border border-red-200">
+                    <p className="font-semibold text-gray-800 mb-2">Delete Account</p>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Request account deletion. Your hostel owner must approve this request.
+                    </p>
+                    
+                    {deletionRequest ? (
+                      <div className="space-y-3">
+                        {deletionRequest.status === 'pending' && (
+                          <>
+                            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                              <p className="text-sm font-semibold text-yellow-800">⏳ Deletion Request Pending</p>
+                              <p className="text-xs text-yellow-700 mt-1">
+                                Requested on: {new Date(deletionRequest.requestedAt).toLocaleDateString('en-IN')}
+                              </p>
+                              <p className="text-xs text-yellow-700 mt-1">
+                                Reason: {deletionRequest.reason}
+                              </p>
+                            </div>
+                            <button
+                              onClick={handleCancelDeletionRequest}
+                              className="px-6 py-2 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-semibold"
+                            >
+                              Cancel Request
+                            </button>
+                          </>
+                        )}
+                        
+                        {deletionRequest.status === 'rejected' && (
+                          <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                            <p className="text-sm font-semibold text-red-800 mb-2">❌ Request Rejected</p>
+                            <p className="text-xs text-red-700 mb-1">
+                              Your account deletion request was rejected by the hostel owner.
+                            </p>
+                            {deletionRequest.ownerResponse?.message && (
+                              <>
+                                <p className="text-xs text-red-700 font-semibold mt-2">Owner's Response:</p>
+                                <p className="text-xs text-red-700 bg-white p-2 rounded mt-1">
+                                  {deletionRequest.ownerResponse.message}
+                                </p>
+                              </>
+                            )}
+                            <button
+                              onClick={() => {
+                                setDeletionRequest(null)
+                                fetchDeletionRequestStatus()
+                              }}
+                              className="mt-3 px-4 py-2 bg-primary text-white rounded-lg hover:bg-blue-700 transition text-sm"
+                            >
+                              Submit New Request
+                            </button>
+                          </div>
+                        )}
+
+                        {deletionRequest.status === 'approved' && (
+                          <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                            <p className="text-sm font-semibold text-green-800 mb-2">✓ Request Approved</p>
+                            <p className="text-xs text-green-700">
+                              Your account deletion request has been approved. Your account will be deactivated shortly.
+                            </p>
+                            {deletionRequest.ownerResponse?.message && (
+                              <>
+                                <p className="text-xs text-green-700 font-semibold mt-2">Owner's Message:</p>
+                                <p className="text-xs text-green-700 bg-white p-2 rounded mt-1">
+                                  {deletionRequest.ownerResponse.message}
+                                </p>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setShowDeletionModal(true)}
+                        className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-semibold"
+                      >
+                        Request Account Deletion
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -2887,14 +3948,14 @@ export default function TenantDashboard() {
         </div>
       )}
 
-      {/* Orders Modal */}
+      {/* Current Orders Modal */}
       {showOrdersModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={() => setShowOrdersModal(false)}>
           <div className="bg-white rounded-2xl p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h3 className="text-3xl font-bold text-text-dark">📋 My Orders</h3>
-                <p className="text-sm text-gray-600 mt-1">Track your food orders</p>
+                <h3 className="text-3xl font-bold text-text-dark">📋 Current Orders</h3>
+                <p className="text-sm text-gray-600 mt-1">Track your active food orders</p>
               </div>
               <button
                 onClick={() => {
@@ -2912,15 +3973,15 @@ export default function TenantDashboard() {
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
                 <p className="text-text-muted">Loading orders...</p>
               </div>
-            ) : myOrders.length === 0 ? (
+            ) : myOrders.filter(o => ['pending', 'confirmed', 'preparing', 'ready'].includes(o.orderStatus)).length === 0 ? (
               <div className="text-center py-12">
-                <div className="text-6xl mb-4">📋</div>
-                <p className="text-text-muted text-lg">No orders yet</p>
-                <p className="text-sm text-gray-500 mt-2">Your order history will appear here</p>
+                <div className="text-6xl mb-4">✅</div>
+                <p className="text-text-muted text-lg">No active orders</p>
+                <p className="text-sm text-gray-500 mt-2">All your current orders are delivered or cancelled</p>
               </div>
             ) : (
               <div className="space-y-4">
-                {myOrders.map(order => (
+                {myOrders.filter(o => ['pending', 'confirmed', 'preparing', 'ready'].includes(o.orderStatus)).map(order => (
                   <div key={order._id} className="border rounded-xl p-4 hover:shadow-lg transition">
                     <div className="flex items-start justify-between mb-3">
                       <div>
@@ -3045,7 +4106,7 @@ export default function TenantDashboard() {
 
                     {/* Feedback Button for Delivered Orders */}
                     {order.orderStatus === 'delivered' && (
-                      <div className="mt-3 pt-3 border-t border-gray-200">
+                      <div className="mt-3 pt-3 border-t border-gray-200 space-y-2">
                         {order.feedback ? (
                           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-2 text-center">
                             <span className="text-sm text-yellow-800">⭐ Feedback submitted</span>
@@ -3057,6 +4118,22 @@ export default function TenantDashboard() {
                           >
                             ⭐ Rate Your Order
                           </button>
+                        )}
+                        
+                        {/* Provider's Rating */}
+                        {order.tenantRating && order.tenantRating.rating && (
+                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-2">
+                            <div className="flex items-center justify-center gap-2 text-sm">
+                              <span className="text-blue-800">👨‍🍳 Provider rated you:</span>
+                              <div className="flex gap-0.5">
+                                {[...Array(5)].map((_, i) => (
+                                  <span key={i} className={i < order.tenantRating.rating ? 'text-blue-400' : 'text-gray-300'}>
+                                    ★
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
                         )}
                       </div>
                     )}
@@ -3174,6 +4251,176 @@ export default function TenantDashboard() {
         </div>
       )}
 
+      {/* Order History Modal */}
+      {showOrderHistoryModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={() => setShowOrderHistoryModal(false)}>
+          <div className="bg-white rounded-2xl p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h3 className="text-3xl font-bold text-text-dark">📚 Order History</h3>
+                <p className="text-sm text-gray-600 mt-1">Your past orders with feedbacks</p>
+              </div>
+              <button
+                onClick={() => setShowOrderHistoryModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            {ordersLoading ? (
+              <div className="text-center py-12">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+                <p className="text-text-muted">Loading order history...</p>
+              </div>
+            ) : myOrders.filter(o => ['delivered', 'cancelled'].includes(o.orderStatus)).length === 0 ? (
+              <div className="text-center py-12">
+                <div className="text-6xl mb-4">📭</div>
+                <p className="text-text-muted text-lg">No order history</p>
+                <p className="text-sm text-gray-500 mt-2">Your completed or cancelled orders will appear here</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {myOrders.filter(o => ['delivered', 'cancelled'].includes(o.orderStatus)).map(order => (
+                  <div key={order._id} className="border rounded-xl p-4 hover:shadow-lg transition bg-gray-50">
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-text-dark">Order #{order.orderNumber}</h4>
+                          <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
+                            order.orderStatus === 'delivered' ? 'bg-green-100 text-green-700' :
+                            order.orderStatus === 'cancelled' ? 'bg-red-100 text-red-700' :
+                            'bg-gray-100 text-gray-700'
+                          }`}>
+                            {order.orderStatus}
+                          </span>
+                        </div>
+                        <p className="text-sm text-text-muted mt-1">
+                          {new Date(order.createdAt).toLocaleDateString('en-IN', { 
+                            day: 'numeric', 
+                            month: 'short', 
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-2xl font-bold text-primary">₹{order.totalAmount}</p>
+                        <span className={`text-xs px-2 py-1 rounded-full ${
+                          order.paymentStatus === 'paid' ? 'bg-green-100 text-green-700' :
+                          order.paymentStatus === 'failed' ? 'bg-red-100 text-red-700' :
+                          'bg-yellow-100 text-yellow-700'
+                        }`}>
+                          {order.paymentStatus}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Order Items */}
+                    <div className="bg-white rounded-lg p-3 mb-3 border border-gray-200">
+                      <p className="text-xs font-semibold text-text-dark mb-2">Items:</p>
+                      <div className="space-y-1">
+                        {order.items.map((item, idx) => (
+                          <div key={idx} className="flex justify-between text-sm">
+                            <span className="text-text-dark">{item.name} x{item.quantity}</span>
+                            <span className="font-semibold">₹{item.price * item.quantity}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Delivery Address */}
+                    {order.deliveryAddress && (
+                      <div className="text-sm text-text-muted mb-3">
+                        <span className="font-semibold">📍 Delivered to:</span> Room {order.deliveryAddress.roomNumber}, 
+                        Floor {order.deliveryAddress.floor}, {order.deliveryAddress.hostelName}
+                      </div>
+                    )}
+
+                    {order.orderStatus === 'delivered' && order.deliveredAt && (
+                      <div className="text-sm text-green-600 font-semibold mb-3">
+                        ✓ Delivered on {new Date(order.deliveredAt).toLocaleString('en-IN')}
+                      </div>
+                    )}
+
+                    {/* Feedback Section */}
+                    {order.orderStatus === 'delivered' && (
+                      <div className="border-t border-gray-200 pt-3 mt-3 space-y-3">
+                        {/* Your Feedback (Tenant's rating of order) */}
+                        {order.feedback ? (
+                          <div className="bg-gradient-to-r from-yellow-50 to-orange-50 border-2 border-yellow-200 rounded-lg p-3">
+                            <div className="flex items-start gap-3">
+                              <div className="text-2xl">⭐</div>
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="font-bold text-yellow-900">Your Rating</span>
+                                  <div className="flex gap-1">
+                                    {[...Array(5)].map((_, i) => (
+                                      <span key={i} className={i < order.feedback.rating ? 'text-yellow-400 text-lg' : 'text-gray-300 text-lg'}>
+                                        ★
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                                <p className="text-sm text-yellow-900">{order.feedback.comment}</p>
+                                <p className="text-xs text-yellow-700 mt-2">
+                                  Rated on {new Date(order.feedback.createdAt).toLocaleDateString('en-IN')}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => openFeedbackModal(order)}
+                            className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 text-white py-2 px-4 rounded-lg hover:from-yellow-600 hover:to-orange-600 transition-all font-semibold text-sm flex items-center justify-center gap-2"
+                          >
+                            ⭐ Rate This Order
+                          </button>
+                        )}
+
+                        {/* Provider's Rating of Tenant */}
+                        {order.tenantRating && order.tenantRating.rating && (
+                          <div className="bg-gradient-to-r from-blue-50 to-purple-50 border-2 border-blue-200 rounded-lg p-3">
+                            <div className="flex items-start gap-3">
+                              <div className="text-2xl">👨‍🍳</div>
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="font-bold text-blue-900">Provider's Rating for You</span>
+                                  <div className="flex gap-1">
+                                    {[...Array(5)].map((_, i) => (
+                                      <span key={i} className={i < order.tenantRating.rating ? 'text-blue-400 text-lg' : 'text-gray-300 text-lg'}>
+                                        ★
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                                {order.tenantRating.comment && (
+                                  <p className="text-sm text-blue-900">{order.tenantRating.comment}</p>
+                                )}
+                                <p className="text-xs text-blue-700 mt-2">
+                                  Rated on {new Date(order.tenantRating.ratedAt).toLocaleDateString('en-IN')}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {order.orderStatus === 'cancelled' && (
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                        <p className="text-sm text-red-700 font-semibold">❌ This order was cancelled</p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Video Modal */}
       {showVideoModal && (
         <div 
@@ -3204,6 +4451,638 @@ export default function TenantDashboard() {
               >
                 Your browser does not support the video tag.
               </video>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Contract Details Modal */}
+      {showContractModal && selectedContract && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowContractModal(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-gradient-to-r from-primary to-blue-600 text-white p-6 sticky top-0 z-10">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="text-2xl font-bold flex items-center gap-2 mb-2">
+                    📄 Contract Details
+                  </h3>
+                  <p className="text-sm opacity-90">Contract #{selectedContract.contractNumber}</p>
+                </div>
+                <button
+                  onClick={() => setShowContractModal(false)}
+                  className="text-white hover:bg-white/20 rounded-full p-2 transition-colors"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Status Banner */}
+              <div className={`rounded-lg p-4 ${
+                selectedContract.status === 'active' ? 'bg-green-100 border-2 border-green-300' :
+                selectedContract.status === 'pending_signatures' ? 'bg-yellow-100 border-2 border-yellow-300' :
+                selectedContract.status === 'draft' ? 'bg-blue-100 border-2 border-blue-300' :
+                'bg-gray-100 border-2 border-gray-300'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-bold text-lg">Contract Status</h4>
+                    <p className={`text-sm font-semibold ${
+                      selectedContract.status === 'active' ? 'text-green-700' :
+                      selectedContract.status === 'pending_signatures' ? 'text-yellow-700' :
+                      'text-gray-700'
+                    }`}>
+                      {selectedContract.status === 'active' && '✅ Active'}
+                      {selectedContract.status === 'pending_signatures' && '⏳ Pending Signatures'}
+                      {selectedContract.status === 'draft' && '📝 Draft'}
+                      {selectedContract.status === 'terminated' && '❌ Terminated'}
+                      {selectedContract.status === 'expired' && '⏰ Expired'}
+                    </p>
+                  </div>
+                  {selectedContract.status === 'pending_signatures' && (
+                    <div className="text-right">
+                      <p className="text-xs text-gray-600 mb-1">Signatures</p>
+                      <div className="flex gap-2 text-sm">
+                        <span className={selectedContract.tenantSignature?.signed ? 'text-green-600' : 'text-gray-400'}>
+                          {selectedContract.tenantSignature?.signed ? '✓' : '○'} Tenant
+                        </span>
+                        <span className={selectedContract.ownerSignature?.signed ? 'text-green-600' : 'text-gray-400'}>
+                          {selectedContract.ownerSignature?.signed ? '✓' : '○'} Owner
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Property Details */}
+              <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg p-6 border-2 border-blue-200">
+                <h4 className="font-bold text-xl mb-4 flex items-center gap-2">
+                  🏢 Property Information
+                </h4>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-600">Hostel Name</p>
+                    <p className="font-semibold text-lg">{selectedContract.hostel?.name}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Address</p>
+                    <p className="font-semibold">
+                      {typeof selectedContract.hostel?.address === 'object' 
+                        ? `${selectedContract.hostel?.address?.street || ''}, ${selectedContract.hostel?.address?.city || ''}, ${selectedContract.hostel?.address?.state || ''} ${selectedContract.hostel?.address?.pincode || ''}`.replace(/, ,/g, ',').trim()
+                        : selectedContract.hostel?.address || 'Address not available'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Room Number</p>
+                    <p className="font-semibold text-lg">{selectedContract.room?.roomNumber}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Floor</p>
+                    <p className="font-semibold">{selectedContract.room?.floor}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Room Type</p>
+                    <p className="font-semibold capitalize">{selectedContract.room?.type}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Capacity</p>
+                    <p className="font-semibold">{selectedContract.room?.capacity} persons</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Contract Duration */}
+              <div className="bg-gradient-to-br from-green-50 to-teal-50 rounded-lg p-6 border-2 border-green-200">
+                <h4 className="font-bold text-xl mb-4 flex items-center gap-2">
+                  📅 Contract Duration
+                </h4>
+                <div className="grid md:grid-cols-3 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-600">Start Date</p>
+                    <p className="font-bold text-lg">{new Date(selectedContract.startDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">End Date</p>
+                    <p className="font-bold text-lg">{new Date(selectedContract.endDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Total Duration</p>
+                    <p className="font-bold text-lg text-primary">
+                      {Math.ceil((new Date(selectedContract.endDate) - new Date(selectedContract.startDate)) / (1000 * 60 * 60 * 24))} days
+                    </p>
+                  </div>
+                  {selectedContract.status === 'active' && (
+                    <div className="md:col-span-3 bg-white rounded-lg p-3 border border-green-300">
+                      <p className="text-sm text-gray-600">Days Remaining</p>
+                      <p className="font-bold text-2xl text-green-600">
+                        {Math.max(0, Math.ceil((new Date(selectedContract.endDate) - new Date()) / (1000 * 60 * 60 * 24)))} days
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Financial Details */}
+              <div className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-lg p-6 border-2 border-yellow-200">
+                <h4 className="font-bold text-xl mb-4 flex items-center gap-2">
+                  💰 Financial Details
+                </h4>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className="bg-white rounded-lg p-4 border border-yellow-300">
+                    <p className="text-sm text-gray-600 mb-1">Monthly Rent</p>
+                    <p className="font-bold text-3xl text-primary">₹{selectedContract.monthlyRent?.toLocaleString()}</p>
+                  </div>
+                  <div className="bg-white rounded-lg p-4 border border-yellow-300">
+                    <p className="text-sm text-gray-600 mb-1">Security Deposit</p>
+                    <p className="font-bold text-3xl text-orange-600">₹{selectedContract.securityDeposit?.toLocaleString()}</p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <p className="text-sm text-gray-600">Payment Status</p>
+                    <span className={`inline-block px-3 py-1 rounded-full text-sm font-bold ${
+                      selectedContract.paymentStatus === 'paid' ? 'bg-green-100 text-green-700' :
+                      selectedContract.paymentStatus === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                      'bg-red-100 text-red-700'
+                    }`}>
+                      {selectedContract.paymentStatus?.toUpperCase() || 'PENDING'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Owner Details */}
+              <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-lg p-6 border-2 border-purple-200">
+                <h4 className="font-bold text-xl mb-4 flex items-center gap-2">
+                  👤 Owner Information
+                </h4>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-gray-600">Name</p>
+                    <p className="font-semibold text-lg">{selectedContract.owner?.name}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Phone</p>
+                    <p className="font-semibold text-lg">{selectedContract.owner?.phone}</p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <p className="text-sm text-gray-600">Email</p>
+                    <p className="font-semibold">{selectedContract.owner?.email}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Terms and Conditions */}
+              {selectedContract.terms && selectedContract.terms.length > 0 && (
+                <div className="bg-gray-50 rounded-lg p-6 border-2 border-gray-200">
+                  <h4 className="font-bold text-xl mb-4 flex items-center gap-2">
+                    📋 Terms & Conditions
+                  </h4>
+                  <ul className="space-y-3">
+                    {selectedContract.terms.map((term, idx) => (
+                      <li key={idx} className="flex items-start gap-3">
+                        <span className="text-primary font-bold text-lg">{idx + 1}.</span>
+                        <div className="flex-1">
+                          {term.clause && (
+                            <p className="font-semibold text-gray-800">{term.clause}</p>
+                          )}
+                          <p className="text-gray-700 text-sm">{term.description || term}</p>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Penalties */}
+              {selectedContract.penalties && selectedContract.penalties.length > 0 && (
+                <div className="bg-red-50 rounded-lg p-6 border-2 border-red-200">
+                  <h4 className="font-bold text-xl mb-4 flex items-center gap-2 text-red-800">
+                    ⚠️ Penalties
+                  </h4>
+                  <div className="space-y-3">
+                    {selectedContract.penalties.map((penalty, idx) => (
+                      <div key={idx} className="bg-white rounded-lg p-4 border border-red-300">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-semibold text-gray-800">{penalty.penaltyType}</p>
+                            <p className="text-sm text-gray-600 mt-1">{penalty.description}</p>
+                          </div>
+                          <p className="font-bold text-red-600 text-lg">₹{penalty.amount}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Signature Status */}
+              <div className="bg-blue-50 rounded-lg p-6 border-2 border-blue-200">
+                <h4 className="font-bold text-xl mb-4 flex items-center gap-2">
+                  ✍️ Signatures
+                </h4>
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div className={`p-4 rounded-lg border-2 ${selectedContract.tenantSignature?.signed ? 'bg-green-50 border-green-300' : 'bg-gray-50 border-gray-300'}`}>
+                    <p className="font-semibold mb-2">Tenant Signature</p>
+                    {selectedContract.tenantSignature?.signed ? (
+                      <>
+                        <p className="text-green-600 font-bold mb-1">✓ Signed</p>
+                        <p className="text-xs text-gray-600">
+                          {new Date(selectedContract.tenantSignature.signedAt).toLocaleString('en-IN')}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-gray-500">○ Pending</p>
+                    )}
+                  </div>
+                  <div className={`p-4 rounded-lg border-2 ${selectedContract.ownerSignature?.signed ? 'bg-green-50 border-green-300' : 'bg-gray-50 border-gray-300'}`}>
+                    <p className="font-semibold mb-2">Owner Signature</p>
+                    {selectedContract.ownerSignature?.signed ? (
+                      <>
+                        <p className="text-green-600 font-bold mb-1">✓ Signed</p>
+                        <p className="text-xs text-gray-600">
+                          {new Date(selectedContract.ownerSignature.signedAt).toLocaleString('en-IN')}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-gray-500">○ Pending</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap gap-3 pt-4 border-t-2">
+                {selectedContract.status === 'pending_signatures' && !selectedContract.tenantSignature?.signed && (
+                  <button 
+                    onClick={() => handleSignContract(selectedContract._id)}
+                    disabled={signingContract}
+                    className="bg-green-600 text-white px-8 py-3 rounded-lg hover:bg-green-700 transition-colors font-bold flex-1 disabled:opacity-50 text-lg"
+                  >
+                    {signingContract ? '✍️ Signing...' : '✍️ Sign Contract Now'}
+                  </button>
+                )}
+                <button 
+                  onClick={() => handleContactOwner(selectedContract)}
+                  className="bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 transition-colors font-bold flex-1 text-lg"
+                >
+                  📞 Contact Owner
+                </button>
+                {selectedContract.contractDocument?.url && (
+                  <button 
+                    onClick={() => window.open(selectedContract.contractDocument.url, '_blank')}
+                    className="bg-purple-600 text-white px-8 py-3 rounded-lg hover:bg-purple-700 transition-colors font-bold flex-1 text-lg"
+                  >
+                    📥 Download Document
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add/Edit Expense Modal */}
+      {showAddExpenseModal && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowAddExpenseModal(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-gradient-to-r from-primary to-blue-600 text-white p-6 sticky top-0 z-10">
+              <div className="flex justify-between items-start">
+                <div>
+                  <h3 className="text-2xl font-bold flex items-center gap-2 mb-2">
+                    💰 {editingExpense ? 'Edit' : 'Add'} Monthly Expense
+                  </h3>
+                  <p className="text-sm opacity-90">{editingExpense ? 'Update your expense details' : 'Track your expenses for better budgeting'}</p>
+                </div>
+                <button
+                  onClick={() => setShowAddExpenseModal(false)}
+                  className="text-white hover:bg-white/20 rounded-full p-2 transition-colors"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Month and Year Selection */}
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Month</label>
+                  <select
+                    value={expenseForm.month}
+                    onChange={(e) => handleExpenseFormChange('month', parseInt(e.target.value))}
+                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-primary focus:outline-none"
+                  >
+                    {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => (
+                      <option key={m} value={m}>
+                        {new Date(2024, m-1).toLocaleDateString('en-US', { month: 'long' })}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">Year</label>
+                  <select
+                    value={expenseForm.year}
+                    onChange={(e) => handleExpenseFormChange('year', parseInt(e.target.value))}
+                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-primary focus:outline-none"
+                  >
+                    {[2025, 2024, 2023].map(y => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Main Expenses */}
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">🏠 Rent</label>
+                  <input
+                    type="number"
+                    value={expenseForm.rent}
+                    onChange={(e) => handleExpenseFormChange('rent', parseFloat(e.target.value) || 0)}
+                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-primary focus:outline-none"
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">⚡ Electricity</label>
+                  <input
+                    type="number"
+                    value={expenseForm.electricity}
+                    onChange={(e) => handleExpenseFormChange('electricity', parseFloat(e.target.value) || 0)}
+                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-primary focus:outline-none"
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">💧 Water</label>
+                  <input
+                    type="number"
+                    value={expenseForm.water}
+                    onChange={(e) => handleExpenseFormChange('water', parseFloat(e.target.value) || 0)}
+                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-primary focus:outline-none"
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">🍽️ Food</label>
+                  <input
+                    type="number"
+                    value={expenseForm.food}
+                    onChange={(e) => handleExpenseFormChange('food', parseFloat(e.target.value) || 0)}
+                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-primary focus:outline-none"
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 mb-2">🔧 Maintenance</label>
+                  <input
+                    type="number"
+                    value={expenseForm.maintenance}
+                    onChange={(e) => handleExpenseFormChange('maintenance', parseFloat(e.target.value) || 0)}
+                    className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-primary focus:outline-none"
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+
+              {/* Other Expenses */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <label className="block text-sm font-semibold text-gray-700">📝 Other Expenses</label>
+                  <button
+                    onClick={handleAddOtherExpense}
+                    className="text-primary hover:text-blue-700 text-sm font-semibold"
+                  >
+                    + Add Item
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {expenseForm.other.map((item, index) => (
+                    <div key={index} className="flex gap-2">
+                      <input
+                        type="text"
+                        value={item.description}
+                        onChange={(e) => handleOtherExpenseChange(index, 'description', e.target.value)}
+                        className="flex-1 px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-primary focus:outline-none"
+                        placeholder="Description"
+                      />
+                      <input
+                        type="number"
+                        value={item.amount}
+                        onChange={(e) => handleOtherExpenseChange(index, 'amount', parseFloat(e.target.value) || 0)}
+                        className="w-32 px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-primary focus:outline-none"
+                        placeholder="Amount"
+                      />
+                      <button
+                        onClick={() => handleRemoveOtherExpense(index)}
+                        className="px-3 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">📝 Notes (Optional)</label>
+                <textarea
+                  value={expenseForm.notes}
+                  onChange={(e) => handleExpenseFormChange('notes', e.target.value)}
+                  className="w-full px-4 py-2 border-2 border-gray-300 rounded-lg focus:border-primary focus:outline-none"
+                  rows="3"
+                  placeholder="Add any additional notes..."
+                />
+              </div>
+
+              {/* Total */}
+              <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-lg p-4 border-2 border-green-300">
+                <div className="flex justify-between items-center">
+                  <span className="text-lg font-bold text-gray-800">Total Expense:</span>
+                  <span className="text-3xl font-bold text-primary">
+                    ₹{(
+                      expenseForm.rent + 
+                      expenseForm.electricity + 
+                      expenseForm.water + 
+                      expenseForm.food + 
+                      expenseForm.maintenance + 
+                      expenseForm.other.reduce((sum, item) => sum + item.amount, 0)
+                    ).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-4 border-t">
+                <button
+                  onClick={() => setShowAddExpenseModal(false)}
+                  className="flex-1 px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSubmitExpense}
+                  className="flex-1 px-6 py-3 bg-gradient-to-r from-primary to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition font-semibold"
+                >
+                  {editingExpense ? 'Update Expense' : 'Save Expense'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Phone OTP Verification Modal */}
+      {showPhoneOTPModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-text-dark">📱 Verify Phone Number</h3>
+              <button
+                onClick={() => {
+                  setShowPhoneOTPModal(false)
+                  setPhoneChangeOTP('')
+                  setPhoneOTPSent(false)
+                  setNewPhoneNumber('')
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <p className="text-sm text-blue-800">
+                  <strong>New Phone Number:</strong> {newPhoneNumber}
+                </p>
+                <p className="text-xs text-blue-600 mt-1">
+                  An OTP will be sent to this number for verification
+                </p>
+              </div>
+
+              {!phoneOTPSent ? (
+                <button
+                  onClick={handleSendPhoneOTP}
+                  disabled={sendingPhoneOTP}
+                  className="w-full px-6 py-3 bg-gradient-to-r from-primary to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition font-semibold disabled:opacity-50"
+                >
+                  {sendingPhoneOTP ? 'Sending OTP...' : 'Send OTP'}
+                </button>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">
+                      Enter 6-digit OTP
+                    </label>
+                    <input
+                      type="text"
+                      value={phoneChangeOTP}
+                      onChange={(e) => setPhoneChangeOTP(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-primary focus:outline-none text-center text-2xl tracking-widest"
+                      placeholder="000000"
+                      maxLength="6"
+                    />
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button
+                      onClick={handleSendPhoneOTP}
+                      disabled={sendingPhoneOTP}
+                      className="flex-1 px-4 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-semibold disabled:opacity-50"
+                    >
+                      {sendingPhoneOTP ? 'Resending...' : 'Resend OTP'}
+                    </button>
+                    <button
+                      onClick={handleVerifyPhoneOTP}
+                      disabled={verifyingPhoneOTP || phoneChangeOTP.length !== 6}
+                      className="flex-1 px-4 py-3 bg-gradient-to-r from-primary to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 transition font-semibold disabled:opacity-50"
+                    >
+                      {verifyingPhoneOTP ? 'Verifying...' : 'Verify OTP'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Deletion Request Modal */}
+      {showDeletionModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-red-800">⚠️ Request Account Deletion</h3>
+              <button
+                onClick={() => {
+                  setShowDeletionModal(false)
+                  setDeletionReason('')
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                <p className="text-sm text-red-800">
+                  <strong>Important:</strong> This action requires approval from your hostel owner. Your account will only be deleted after the owner reviews and approves your request.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Reason for Deletion <span className="text-red-600">*</span>
+                </label>
+                <textarea
+                  value={deletionReason}
+                  onChange={(e) => setDeletionReason(e.target.value)}
+                  className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-red-500 focus:outline-none resize-none"
+                  placeholder="Please explain why you want to delete your account..."
+                  rows="4"
+                  maxLength="500"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  {deletionReason.length}/500 characters
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowDeletionModal(false)
+                    setDeletionReason('')
+                  }}
+                  className="flex-1 px-4 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleRequestDeletion}
+                  disabled={sendingDeletionRequest || !deletionReason.trim()}
+                  className="flex-1 px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-semibold disabled:opacity-50"
+                >
+                  {sendingDeletionRequest ? 'Sending Request...' : 'Send Request'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

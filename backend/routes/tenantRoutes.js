@@ -5,11 +5,15 @@ const {
   getHostelDetails,
   getMyExpenses,
   addExpense,
+  deleteExpense,
   submitFeedback,
   submitOrderFeedback,
   getMyContracts,
   createBookingOrder,
   bookRoom,
+  requestAccountDeletion,
+  getMyDeletionRequest,
+  cancelDeletionRequest,
 } = require('../controllers/tenantController');
 const { protect } = require('../middleware/authMiddleware');
 const { authorize } = require('../middleware/roleMiddleware');
@@ -21,10 +25,14 @@ router.get('/hostels/search', searchHostels);
 router.get('/hostels/:id', getHostelDetails);
 router.get('/expenses', getMyExpenses);
 router.post('/expenses', addExpense);
+router.delete('/expenses/:id', deleteExpense);
 router.post('/feedback', submitFeedback);
 router.post('/orders/:orderId/feedback', submitOrderFeedback);
 router.get('/contracts', getMyContracts);
 router.post('/create-booking-order', createBookingOrder);
 router.post('/book-room', bookRoom);
+router.post('/deletion-request', requestAccountDeletion);
+router.get('/deletion-request', getMyDeletionRequest);
+router.delete('/deletion-request/:id', cancelDeletionRequest);
 
 module.exports = router;
