@@ -1,0 +1,108 @@
+HOSTEL MAP EXPLORER - PLAIN TEXT DESIGN DOCUMENT
+================================================
+
+1. OVERALL SCREEN LAYOUT
+------------------------
+Top Section (Map View - 70 Percent):
+- Dark mode map
+- Circular hostel markers with images
+- Back button, Search This Area button, Center button
+
+Bottom Section (30-45 Percent):
+- Dark bottom sheet
+- Hostel name, weather, distance
+- Address, rating
+- Three-image gallery
+- View Details button
+
+2. COLOR PALETTE (HEX CODES)
+----------------------------
+Map Background: #0B1D2D
+Bottom Sheet: #0F0F10
+Primary Text: #FFFFFF
+Secondary Text: #B5B5B8
+CTA Button: #1E3A8A
+CTA Hover: #2749A8
+Marker Shadow: rgba(0,0,0,0.4)
+
+3. TYPOGRAPHY
+-------------
+Font: Inter or Poppins
+Title: 18–20 px
+Subtitle: 14–16 px
+Body: 13–14 px
+Rating Text: 14 px
+Marker Labels: 12 px
+Distance Label: 10 px
+
+4. HOSTEL MAP MARKERS
+---------------------
+- Size: 70 x 70 px
+- Circle shape
+- Border: 4 px white
+- Shadow
+- Label: hostel name and distance
+
+5. FLOATING CONTROLS
+--------------------
+Back Button:
+- Circular
+- Dark background
+- White icon
+
+Center Button:
+- Circular location icon
+
+Search This Area:
+- Rounded pill
+- Semi-transparent black background
+- White text
+
+6. BOTTOM SHEET
+---------------
+- Background: #0F0F10
+- Rounded top corners
+- Padding: 20 px
+- Sections: Title, weather, address, rating, gallery, CTA
+
+7. SPACING RULES
+----------------
+- 8 px grid system
+- Marker spacing: 20–40 px
+- Gallery spacing: 10 px
+
+8. INTERACTION BEHAVIOR
+-----------------------
+- Marker tap opens bottom sheet
+- Bottom sheet draggable down
+- Search This Area refetches
+- Center button focuses map
+
+9. TAILWIND UTILITY CLASSES
+---------------------------
+General:
+bg-[#0F0F10]
+text-white
+text-gray-300
+rounded-full
+rounded-xl
+rounded-3xl
+shadow-lg
+grid grid-cols-3 gap-2
+absolute bottom-0 w-full
+p-5
+flex items-center justify-center
+
+10. COMPONENT STRUCTURE
+-----------------------
+MapContainer
+HostelMarker
+BottomSheet
+FloatingControls
+GalleryStrip
+
+11. API ENDPOINT
+----------------
+GET /api/hostels/nearby?lat=&lng=
+
+END OF DOCUMENT

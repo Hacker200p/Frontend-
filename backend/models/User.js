@@ -85,6 +85,22 @@ const userSchema = new mongoose.Schema({
     pan: String,
     businessLicense: String,
   },
+  bio: {
+    type: String,
+    default: ''
+  },
+  addressString: {
+    type: String,
+    default: ''
+  },
+  city: {
+    type: String,
+    default: ''
+  },
+  state: {
+    type: String,
+    default: ''
+  },
   refreshToken: {
     type: String,
     select: false,

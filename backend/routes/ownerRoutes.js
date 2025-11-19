@@ -16,6 +16,7 @@ const {
   getDeletionRequests,
   approveDeletionRequest,
   rejectDeletionRequest,
+  getHostelFeedbacks,
 } = require('../controllers/ownerController');
 const { protect } = require('../middleware/authMiddleware');
 const { authorize } = require('../middleware/roleMiddleware');
@@ -57,5 +58,8 @@ router.post('/tenants/:contractId/terminate', terminateTenantContract);
 router.get('/deletion-requests', getDeletionRequests);
 router.put('/deletion-requests/:id/approve', approveDeletionRequest);
 router.put('/deletion-requests/:id/reject', rejectDeletionRequest);
+
+// Feedback routes
+router.get('/feedbacks', getHostelFeedbacks);
 
 module.exports = router;

@@ -316,19 +316,46 @@ const getMe = async (req, res) => {
 // @access  Private
 const updateProfile = async (req, res) => {
   try {
-    const { email, foodPreference } = req.body;
+    const { name, email, phone, foodPreference, bio, addressString, city, state } = req.body;
 
     const user = await User.findById(req.user.id);
-    
-    // Name cannot be changed
-    // Phone requires OTP verification (use separate endpoint)
-    if (email) user.email = email;
+    if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+    // Update name if provided
+    if (name) user.name = name;
+
+    // Update email with uniqueness check
+    if (email && email !== user.email) {
+      const existing = await User.findOne({ email });
+      if (existing && existing._id.toString() !== user._id.toString()) {
+        return res.status(400).json({ success: false, message: 'Email already in use' });
+      }
+      user.email = email;
+    }
+
+    // Update phone with basic validation and uniqueness
+    if (phone && phone !== user.phone) {
+      if (!/^[0-9]{10}$/.test(phone)) {
+        return res.status(400).json({ success: false, message: 'Phone number must be 10 digits' });
+      }
+      const existingPhone = await User.findOne({ phone });
+      if (existingPhone && existingPhone._id.toString() !== user._id.toString()) {
+        return res.status(400).json({ success: false, message: 'Phone number already in use' });
+      }
+      user.phone = phone;
+    }
+
     if (foodPreference) user.foodPreference = foodPreference;
+    if (typeof bio !== 'undefined') user.bio = bio;
+    if (typeof addressString !== 'undefined') user.addressString = addressString;
+    if (typeof city !== 'undefined') user.city = city;
+    if (typeof state !== 'undefined') user.state = state;
 
     await user.save();
 
     res.json({ success: true, data: user });
   } catch (error) {
+    console.error('Update profile error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };

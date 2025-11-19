@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
 import { LogOut, Menu, X } from 'lucide-react'
-import { ownerAPI } from '../../services/api'
+import { ownerAPI, authAPI } from '../../services/api'
+import LocationPicker from '../../components/LocationPicker'
 
 export default function OwnerDashboard() {
   const navigate = useNavigate()
@@ -16,13 +17,62 @@ export default function OwnerDashboard() {
     description: '',
     hostelType: 'boys',
     priceRange: { min: '', max: '' },
+    location: null, // { longitude, latitude }
   })
   const [mediaFiles, setMediaFiles] = useState([]) // {file, url, type}
-  const [profile, setProfile] = useState({ displayName: '', contact: '' })
-  const [feedbacks, setFeedbacks] = useState([
-    { id: 1, author: 'John Doe', text: 'Great experience, clean rooms!', rating: 5 },
-    { id: 2, author: 'Priya Singh', text: 'Helpful staff and quick support.', rating: 4 },
-  ])
+  const [showLocationPicker, setShowLocationPicker] = useState(false)
+  const [editingHostel, setEditingHostel] = useState(null)
+  const [showEditHostelModal, setShowEditHostelModal] = useState(false)
+  const [editHostelForm, setEditHostelForm] = useState({
+    name: '',
+    address: { street: '', city: '', state: '', pincode: '' },
+    description: '',
+    hostelType: 'boys',
+    priceRange: { min: '', max: '' },
+    location: null,
+  })
+  const [editHostelMessage, setEditHostelMessage] = useState('')
+  const [showEditLocationPicker, setShowEditLocationPicker] = useState(false)
+  const [profile, setProfile] = useState({ 
+    displayName: '', 
+    contact: '', 
+    email: '',
+    bio: '',
+    address: '',
+    city: '',
+    state: ''
+  })
+  const [profileLoading, setProfileLoading] = useState(false)
+  const [profileMessage, setProfileMessage] = useState('')
+
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      try {
+        const res = await authAPI.getProfile()
+        const u = res.data?.data || res.data || res
+        if (!mounted) return
+        setProfile((p) => ({
+          ...p,
+          displayName: u.name || '',
+          contact: u.phone || '',
+          email: u.email || '',
+          bio: u.bio || '',
+          address: u.addressString || u.address || '',
+          city: u.city || '',
+          state: u.state || '',
+        }))
+      } catch (err) {
+        // silent
+      }
+    })()
+
+    return () => {
+      mounted = false
+    }
+  }, [])
+  const [feedbacks, setFeedbacks] = useState([])
+  const [feedbacksLoading, setFeedbacksLoading] = useState(false)
   const [hostels, setHostels] = useState([])
   const [selectedHostelId, setSelectedHostelId] = useState('')
   const selectedHostel = hostels.find((h) => h._id === selectedHostelId)
@@ -185,7 +235,23 @@ export default function OwnerDashboard() {
     
     // Load deletion requests
     fetchDeletionRequests()
+    
+    // Load feedbacks
+    fetchFeedbacks()
   }, [])
+
+  const fetchFeedbacks = async () => {
+    try {
+      setFeedbacksLoading(true)
+      const res = await ownerAPI.getHostelFeedbacks()
+      setFeedbacks(res.data?.data || [])
+    } catch (error) {
+      console.error('Error fetching feedbacks:', error)
+      setFeedbacks([])
+    } finally {
+      setFeedbacksLoading(false)
+    }
+  }
 
   const fetchTenants = async () => {
     try {
@@ -514,14 +580,20 @@ export default function OwnerDashboard() {
                         <td className="px-4 py-2 space-x-2">
                           <button
                             className="text-primary text-sm hover:underline"
-                            onClick={async () => {
-                              const newName = prompt('Update hostel name', h.name)
-                              if (newName && newName !== h.name) {
-                                await ownerAPI.updateHostel(h._id, { name: newName })
-                                const res = await ownerAPI.getMyHostels()
-                                const list = res.data?.data || []
-                                setHostels(list)
-                              }
+                            onClick={() => {
+                              setEditingHostel(h)
+                              setEditHostelForm({
+                                name: h.name || '',
+                                address: h.address || { street: '', city: '', state: '', pincode: '' },
+                                description: h.description || '',
+                                hostelType: h.hostelType || 'boys',
+                                priceRange: h.priceRange || { min: '', max: '' },
+                                location: h.location?.coordinates ? {
+                                  longitude: h.location.coordinates[0],
+                                  latitude: h.location.coordinates[1]
+                                } : null,
+                              })
+                              setShowEditHostelModal(true)
                             }}
                           >
                             Edit
@@ -930,6 +1002,15 @@ export default function OwnerDashboard() {
                         max: Number(createForm.priceRange.max) || 0,
                       },
                     }
+                    
+                    // Add location if selected
+                    if (createForm.location) {
+                      payload.location = {
+                        type: 'Point',
+                        coordinates: [createForm.location.longitude, createForm.location.latitude]
+                      }
+                    }
+                    
                     await ownerAPI.createHostel(payload)
                     setCreateMessage('Hostel created successfully.')
                     // reload list
@@ -944,6 +1025,7 @@ export default function OwnerDashboard() {
                       description: '',
                       hostelType: 'boys',
                       priceRange: { min: '', max: '' },
+                      location: null,
                     })
                     setTimeout(() => setCreateMessage(''), 2500)
                   } catch (err) {
@@ -961,34 +1043,54 @@ export default function OwnerDashboard() {
                     onChange={(e) => setCreateForm((f) => ({ ...f, name: e.target.value }))}
                     required
                   />
-                  <input
-                    type="text"
-                    placeholder="Street"
-                    className="input"
-                    value={createForm.address.street}
-                    onChange={(e) => setCreateForm((f) => ({ ...f, address: { ...f.address, street: e.target.value } }))}
-                  />
-                  <input
-                    type="text"
-                    placeholder="City"
-                    className="input"
-                    value={createForm.address.city}
-                    onChange={(e) => setCreateForm((f) => ({ ...f, address: { ...f.address, city: e.target.value } }))}
-                  />
-                  <input
-                    type="text"
-                    placeholder="State"
-                    className="input"
-                    value={createForm.address.state}
-                    onChange={(e) => setCreateForm((f) => ({ ...f, address: { ...f.address, state: e.target.value } }))}
-                  />
-                  <input
-                    type="text"
-                    placeholder="Pincode"
-                    className="input"
-                    value={createForm.address.pincode}
-                    onChange={(e) => setCreateForm((f) => ({ ...f, address: { ...f.address, pincode: e.target.value } }))}
-                  />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Street"
+                      className="input"
+                      value={createForm.address.street}
+                      onChange={(e) => setCreateForm((f) => ({ ...f, address: { ...f.address, street: e.target.value } }))}
+                    />
+                    {createForm.address.street && createForm.location && (
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-green-600">Auto-filled</span>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="City"
+                      className="input"
+                      value={createForm.address.city}
+                      onChange={(e) => setCreateForm((f) => ({ ...f, address: { ...f.address, city: e.target.value } }))}
+                    />
+                    {createForm.address.city && createForm.location && (
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-green-600">Auto-filled</span>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="State"
+                      className="input"
+                      value={createForm.address.state}
+                      onChange={(e) => setCreateForm((f) => ({ ...f, address: { ...f.address, state: e.target.value } }))}
+                    />
+                    {createForm.address.state && createForm.location && (
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-green-600">Auto-filled</span>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Pincode"
+                      className="input"
+                      value={createForm.address.pincode}
+                      onChange={(e) => setCreateForm((f) => ({ ...f, address: { ...f.address, pincode: e.target.value } }))}
+                    />
+                    {createForm.address.pincode && createForm.location && (
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-green-600">Auto-filled</span>
+                    )}
+                  </div>
                   <select
                     className="input"
                     value={createForm.hostelType}
@@ -1019,6 +1121,77 @@ export default function OwnerDashboard() {
                   value={createForm.description}
                   onChange={(e) => setCreateForm((f) => ({ ...f, description: e.target.value }))}
                 />
+                
+                {/* Photo Upload Section */}
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 bg-gray-50">
+                  <h4 className="font-semibold text-gray-700 mb-3">Hostel Photos (First photo will be used on map)</h4>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files)
+                      const prepared = files.map((file) => ({
+                        file,
+                        url: URL.createObjectURL(file),
+                        type: 'photo'
+                      }))
+                      setMediaFiles((prev) => [...prev, ...prepared])
+                    }}
+                    className="block w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-primary hover:file:bg-blue-100"
+                  />
+                  
+                  {/* Photo Preview Grid */}
+                  {mediaFiles.length > 0 && (
+                    <div className="mt-4 grid grid-cols-4 gap-3">
+                      {mediaFiles.map((m, idx) => (
+                        <div key={idx} className="relative group">
+                          <img
+                            src={m.url}
+                            alt={`Preview ${idx + 1}`}
+                            className="w-full h-24 object-cover rounded-lg border-2 border-gray-200"
+                          />
+                          {idx === 0 && (
+                            <div className="absolute top-1 left-1 bg-blue-500 text-white text-xs px-2 py-0.5 rounded">
+                              Map Pin
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setMediaFiles((prev) => prev.filter((_, i) => i !== idx))}
+                            className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Location Picker Button */}
+                <div className="border-2 border-gray-300 rounded-lg p-4 bg-gray-50">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="font-semibold text-gray-700">Hostel Location on Map</h4>
+                    {createForm.location && (
+                      <span className="text-sm text-green-600 font-semibold">✓ Location Set</span>
+                    )}
+                  </div>
+                  {createForm.location && (
+                    <p className="text-xs text-gray-600 mb-3">
+                      Coordinates: {createForm.location.latitude.toFixed(6)}, {createForm.location.longitude.toFixed(6)}
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowLocationPicker(true)}
+                    className="w-full bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 transition font-semibold flex items-center justify-center gap-2"
+                  >
+                    <span>📍</span>
+                    {createForm.location ? 'Change Location' : 'Select Location on Map'}
+                  </button>
+                </div>
+
                 <button type="submit" className="submit-btn">Create Hostel</button>
               </form>
             </div>
@@ -1330,18 +1503,73 @@ export default function OwnerDashboard() {
 
           {activeTab === 'feedback' && (
             <div className="card">
-              <h3 className="text-2xl font-bold mb-4 text-text-dark">Feedback</h3>
-              <div className="space-y-3">
-                {feedbacks.map((f) => (
-                  <div key={f.id} className="border rounded-lg p-3">
-                    <div className="flex justify-between">
-                      <p className="font-semibold">{f.author}</p>
-                      <p className="text-yellow-600">⭐ {f.rating}</p>
-                    </div>
-                    <p className="text-text-muted text-sm mt-1">{f.text}</p>
-                  </div>
-                ))}
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-2xl font-bold text-text-dark">⭐ Tenant Feedbacks</h3>
+                  <p className="text-sm text-gray-600 mt-1">Reviews and ratings from your tenants</p>
+                </div>
+                <button
+                  onClick={fetchFeedbacks}
+                  className="btn-secondary text-sm"
+                >
+                  🔄 Refresh
+                </button>
               </div>
+
+              {feedbacksLoading ? (
+                <div className="text-center py-12">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+                  <p className="text-text-muted">Loading feedbacks...</p>
+                </div>
+              ) : feedbacks.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="text-6xl mb-4">⭐</div>
+                  <p className="text-text-muted text-lg">No feedbacks yet</p>
+                  <p className="text-sm text-gray-500 mt-2">Tenant reviews will appear here</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {feedbacks.map((feedback) => (
+                    <div key={feedback._id} className="border-2 rounded-xl p-5 hover:shadow-lg transition bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <h4 className="font-bold text-lg text-text-dark">{feedback.user?.name || 'Anonymous'}</h4>
+                            <div className="flex items-center gap-1 bg-yellow-100 px-3 py-1 rounded-full">
+                              <span className="text-yellow-600 font-bold">★ {feedback.rating}</span>
+                            </div>
+                          </div>
+                          <div className="text-sm text-text-muted space-y-1">
+                            <p><span className="font-semibold">🏠 Hostel:</span> {feedback.targetId?.name || 'Unknown'}</p>
+                            <p><span className="font-semibold">📅 Date:</span> {new Date(feedback.createdAt).toLocaleDateString('en-IN', { 
+                              day: 'numeric', 
+                              month: 'short', 
+                              year: 'numeric'
+                            })}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Review Comment */}
+                      <div className="bg-white rounded-lg p-4 border border-yellow-200">
+                        <p className="text-gray-700 text-sm leading-relaxed">{feedback.comment}</p>
+                      </div>
+
+                      {/* Star Rating Visual */}
+                      <div className="flex items-center gap-1 mt-3">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <span 
+                            key={star} 
+                            className={`text-xl ${star <= feedback.rating ? 'text-yellow-500' : 'text-gray-300'}`}
+                          >
+                            ★
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -1663,17 +1891,26 @@ export default function OwnerDashboard() {
                 onSubmit={async (e) => {
                   e.preventDefault()
                   try {
+                    setProfileLoading(true)
                     await ownerAPI.getMyHostels() // keep token fresh via interceptor
-                    // Save basic fields via auth profile endpoint
+
                     const payload = {}
                     if (profile.displayName) payload.name = profile.displayName
                     if (profile.contact) payload.phone = profile.contact
-                    await (await import('../../services/api')).authAPI.updateProfile(payload)
-                    setCreateMessage('Profile saved successfully.')
-                    setTimeout(() => setCreateMessage(''), 2000)
+                    if (profile.email) payload.email = profile.email
+                    if (profile.bio) payload.bio = profile.bio
+                    if (profile.address) payload.addressString = profile.address
+                    if (profile.city) payload.city = profile.city
+                    if (profile.state) payload.state = profile.state
+
+                    await authAPI.updateProfile(payload)
+                    setProfileMessage('Profile saved successfully.')
+                    setTimeout(() => setProfileMessage(''), 2000)
                   } catch (err) {
-                    setCreateMessage(err.response?.data?.message || 'Failed to save profile')
-                    setTimeout(() => setCreateMessage(''), 2500)
+                    setProfileMessage(err.response?.data?.message || 'Failed to save profile')
+                    setTimeout(() => setProfileMessage(''), 2500)
+                  } finally {
+                    setProfileLoading(false)
                   }
                 }}
               >
@@ -1699,9 +1936,59 @@ export default function OwnerDashboard() {
                     placeholder="9876543210"
                   />
                 </div>
-                <button className="submit-btn" type="submit">
-                  Save Changes
-                </button>
+                <div>
+                  <label className="block text-sm font-medium text-text-dark mb-1">Email</label>
+                  <input
+                    className="input w-full"
+                    value={profile.email}
+                    onChange={(e) => setProfile((p) => ({ ...p, email: e.target.value }))}
+                    placeholder="you@example.com"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-text-dark mb-1">Bio</label>
+                  <textarea
+                    className="input w-full h-24"
+                    value={profile.bio}
+                    onChange={(e) => setProfile((p) => ({ ...p, bio: e.target.value }))}
+                    placeholder="Short bio or description"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-text-dark mb-1">Address</label>
+                  <input
+                    className="input w-full"
+                    value={profile.address}
+                    onChange={(e) => setProfile((p) => ({ ...p, address: e.target.value }))}
+                    placeholder="Street / locality"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-sm font-medium text-text-dark mb-1">City</label>
+                    <input
+                      className="input w-full"
+                      value={profile.city}
+                      onChange={(e) => setProfile((p) => ({ ...p, city: e.target.value }))}
+                      placeholder="City"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-text-dark mb-1">State</label>
+                    <input
+                      className="input w-full"
+                      value={profile.state}
+                      onChange={(e) => setProfile((p) => ({ ...p, state: e.target.value }))}
+                      placeholder="State"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button className="submit-btn" type="submit">
+                    {profileLoading ? 'Saving...' : 'Save Changes'}
+                  </button>
+                  {profileMessage && <div className="text-sm text-text-muted">{profileMessage}</div>}
+                </div>
               </form>
             </div>
           )}
@@ -2572,6 +2859,275 @@ export default function OwnerDashboard() {
           </div>
         </div>
       </div>
+    )}
+
+    {/* Edit Hostel Modal */}
+    {showEditHostelModal && editingHostel && (
+      <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 overflow-y-auto">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl my-8">
+          <div className="p-6 border-b flex items-center justify-between">
+            <h3 className="text-2xl font-bold text-gray-800">Edit Hostel</h3>
+            <button
+              onClick={() => {
+                setShowEditHostelModal(false)
+                setEditingHostel(null)
+                setEditHostelMessage('')
+              }}
+              className="text-gray-500 hover:text-gray-700 transition"
+            >
+              <X size={24} />
+            </button>
+          </div>
+
+          <div className="p-6 max-h-[70vh] overflow-y-auto">
+            {editHostelMessage && (
+              <div className="mb-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm">
+                {editHostelMessage}
+              </div>
+            )}
+
+            <form
+              className="space-y-4"
+              onSubmit={async (e) => {
+                e.preventDefault()
+                try {
+                  const payload = {
+                    name: editHostelForm.name,
+                    address: editHostelForm.address,
+                    description: editHostelForm.description,
+                    hostelType: editHostelForm.hostelType,
+                    priceRange: {
+                      min: Number(editHostelForm.priceRange.min) || 0,
+                      max: Number(editHostelForm.priceRange.max) || 0,
+                    },
+                  }
+
+                  if (editHostelForm.location) {
+                    payload.location = {
+                      type: 'Point',
+                      coordinates: [editHostelForm.location.longitude, editHostelForm.location.latitude]
+                    }
+                  }
+
+                  await ownerAPI.updateHostel(editingHostel._id, payload)
+                  setEditHostelMessage('Hostel updated successfully!')
+                  
+                  const res = await ownerAPI.getMyHostels()
+                  const list = res.data?.data || []
+                  setHostels(list)
+                  
+                  setTimeout(() => {
+                    setShowEditHostelModal(false)
+                    setEditingHostel(null)
+                    setEditHostelMessage('')
+                  }, 1500)
+                } catch (err) {
+                  setEditHostelMessage(err.response?.data?.message || 'Failed to update hostel')
+                }
+              }}
+            >
+              <div className="grid md:grid-cols-2 gap-4">
+                <input
+                  type="text"
+                  placeholder="Hostel Name"
+                  className="input"
+                  value={editHostelForm.name}
+                  onChange={(e) => setEditHostelForm((f) => ({ ...f, name: e.target.value }))}
+                  required
+                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Street"
+                    className="input"
+                    value={editHostelForm.address.street}
+                    onChange={(e) => setEditHostelForm((f) => ({ ...f, address: { ...f.address, street: e.target.value } }))}
+                  />
+                  {editHostelForm.address.street && editHostelForm.location && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-green-600">Auto-filled</span>
+                  )}
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="City"
+                    className="input"
+                    value={editHostelForm.address.city}
+                    onChange={(e) => setEditHostelForm((f) => ({ ...f, address: { ...f.address, city: e.target.value } }))}
+                  />
+                  {editHostelForm.address.city && editHostelForm.location && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-green-600">Auto-filled</span>
+                  )}
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="State"
+                    className="input"
+                    value={editHostelForm.address.state}
+                    onChange={(e) => setEditHostelForm((f) => ({ ...f, address: { ...f.address, state: e.target.value } }))}
+                  />
+                  {editHostelForm.address.state && editHostelForm.location && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-green-600">Auto-filled</span>
+                  )}
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Pincode"
+                    className="input"
+                    value={editHostelForm.address.pincode}
+                    onChange={(e) => setEditHostelForm((f) => ({ ...f, address: { ...f.address, pincode: e.target.value } }))}
+                  />
+                  {editHostelForm.address.pincode && editHostelForm.location && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-green-600">Auto-filled</span>
+                  )}
+                </div>
+                <select
+                  className="input"
+                  value={editHostelForm.hostelType}
+                  onChange={(e) => setEditHostelForm((f) => ({ ...f, hostelType: e.target.value }))}
+                >
+                  <option value="boys">Boys Only</option>
+                  <option value="girls">Girls Only</option>
+                  <option value="coed">Co-ed</option>
+                </select>
+                <input
+                  type="number"
+                  placeholder="Min Price (₹)"
+                  className="input"
+                  value={editHostelForm.priceRange.min}
+                  onChange={(e) => setEditHostelForm((f) => ({ ...f, priceRange: { ...f.priceRange, min: e.target.value } }))}
+                />
+                <input
+                  type="number"
+                  placeholder="Max Price (₹)"
+                  className="input"
+                  value={editHostelForm.priceRange.max}
+                  onChange={(e) => setEditHostelForm((f) => ({ ...f, priceRange: { ...f.priceRange, max: e.target.value } }))}
+                />
+              </div>
+
+              <textarea
+                placeholder="Description"
+                className="input w-full h-32"
+                value={editHostelForm.description}
+                onChange={(e) => setEditHostelForm((f) => ({ ...f, description: e.target.value }))}
+              />
+
+              {/* Location Picker Button */}
+              <div className="border-2 border-gray-300 rounded-lg p-4 bg-gray-50">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-semibold text-gray-700">Hostel Location on Map</h4>
+                  {editHostelForm.location && (
+                    <span className="text-sm text-green-600 font-semibold">✓ Location Set</span>
+                  )}
+                </div>
+                {editHostelForm.location && (
+                  <p className="text-xs text-gray-600 mb-3">
+                    Coordinates: {editHostelForm.location.latitude.toFixed(6)}, {editHostelForm.location.longitude.toFixed(6)}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowEditLocationPicker(true)}
+                  className="w-full bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 transition font-semibold flex items-center justify-center gap-2"
+                >
+                  <span>📍</span>
+                  {editHostelForm.location ? 'Change Location' : 'Select Location on Map'}
+                </button>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEditHostelModal(false)
+                    setEditingHostel(null)
+                    setEditHostelMessage('')
+                  }}
+                  className="flex-1 px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition font-semibold"
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="flex-1 px-6 py-3 bg-primary text-white rounded-lg hover:bg-blue-700 transition font-semibold">
+                  Update Hostel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Edit Location Picker Modal */}
+    {showEditLocationPicker && (
+      <LocationPicker
+        initialLocation={editHostelForm.location}
+        hostelPhoto={editingHostel?.photos?.[0]?.url || null}
+        onLocationSelect={(location, addressDetails) => {
+          console.log('Edit - Location selected:', location)
+          console.log('Edit - Address details received:', addressDetails)
+
+          setEditHostelForm((f) => {
+            const newForm = {
+              ...f,
+              location
+            }
+
+            if (addressDetails) {
+              newForm.address = {
+                street: addressDetails.street || f.address.street,
+                city: addressDetails.city || f.address.city,
+                state: addressDetails.state || f.address.state,
+                pincode: addressDetails.pincode || f.address.pincode,
+              }
+              console.log('Edit - Updated address:', newForm.address)
+            }
+
+            return newForm
+          })
+
+          setShowEditLocationPicker(false)
+        }}
+        onClose={() => setShowEditLocationPicker(false)}
+      />
+    )}
+
+    {/* Location Picker Modal */}
+    {showLocationPicker && (
+      <LocationPicker
+        initialLocation={createForm.location}
+        hostelPhoto={mediaFiles.length > 0 ? mediaFiles[0].url : null}
+        onLocationSelect={(location, addressDetails) => {
+          console.log('Location selected:', location)
+          console.log('Address details received:', addressDetails)
+          
+          // Update both location and address in one setState call
+          setCreateForm((f) => {
+            const newForm = {
+              ...f,
+              location
+            }
+            
+            // Auto-fill address fields if address details are available
+            if (addressDetails) {
+              newForm.address = {
+                street: addressDetails.street || f.address.street,
+                city: addressDetails.city || f.address.city,
+                state: addressDetails.state || f.address.state,
+                pincode: addressDetails.pincode || f.address.pincode,
+              }
+              console.log('Updated address:', newForm.address)
+            }
+            
+            return newForm
+          })
+          
+          setShowLocationPicker(false)
+        }}
+        onClose={() => setShowLocationPicker(false)}
+      />
     )}
     </>
   )

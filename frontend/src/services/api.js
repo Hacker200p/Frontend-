@@ -179,6 +179,7 @@ export const expenseAPI = {
 export const tenantAPI = {
   searchHostels: (params) => api.get('/tenant/hostels/search', { params }),
   getHostelDetails: (id) => api.get(`/tenant/hostels/${id}`),
+  getNearbyHostels: (lat, lng, radius = 5000) => api.get('/tenant/hostels/nearby', { params: { lat, lng, radius } }),
   getExpenses: () => api.get('/tenant/expenses'),
   addExpense: (data) => api.post('/tenant/expenses', data),
   deleteExpense: (id) => api.delete(`/tenant/expenses/${id}`),
@@ -199,6 +200,7 @@ export const ownerAPI = {
   createHostel: (data) => api.post('/owner/hostels', data),
   updateHostel: (id, data) => api.put(`/owner/hostels/${id}`, data),
   deleteHostel: (id) => api.delete(`/owner/hostels/${id}`),
+  getHostelFeedbacks: () => api.get('/owner/feedbacks'),
   uploadHostelMedia: (hostelId, files) => {
     const form = new FormData()
     for (const f of files) form.append('files', f)

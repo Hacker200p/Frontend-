@@ -30,7 +30,7 @@ const searchHostels = async (req, res) => {
       .skip((page - 1) * limit)
       .sort({ rating: -1 });
 
-    // If no verified hostels found, try getting all hostels
+    // If no verified hostels found, try getting all hostels with location data
     if (hostels.length === 0 && showAll !== 'true') {
       console.log('No verified hostels found, fetching all hostels...');
       hostels = await Hostel.find({})
@@ -39,6 +39,17 @@ const searchHostels = async (req, res) => {
         .skip((page - 1) * limit)
         .sort({ rating: -1 });
     }
+    
+    // Log hostel data for debugging
+    console.log(`Found ${hostels.length} hostels`)
+    hostels.forEach((h, idx) => {
+      console.log(`Hostel ${idx + 1}: ${h.name}`)
+      console.log(`  - Location: ${JSON.stringify(h.location)}`)
+      console.log(`  - Photos: ${h.photos?.length || 0} photos`)
+      if (h.photos?.length > 0) {
+        console.log(`  - First photo URL: ${h.photos[0].url}`)
+      }
+    })
 
     const count = await Hostel.countDocuments(query);
 

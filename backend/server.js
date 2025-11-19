@@ -88,6 +88,11 @@ app.get('/api/health', (req, res) => {
   res.json({ success: true, message: 'SafeStay Hub API is running' });
 });
 
+// Mapbox token endpoint
+app.get('/api/config/mapbox-token', (req, res) => {
+  res.json({ success: true, token: process.env.VITE_MAPBOX_TOKEN || '' });
+});
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ success: false, message: 'Route not found' });

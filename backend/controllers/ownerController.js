@@ -4,6 +4,7 @@ const cloudinary = require('../config/cloudinary');
 const User = require('../models/User');
 const DeletionRequest = require('../models/DeletionRequest');
 const Contract = require('../models/Contract');
+const Feedback = require('../models/Feedback');
 
 // @desc    Create new hostel
 // @route   POST /api/owner/hostels
@@ -725,6 +726,30 @@ const rejectDeletionRequest = async (req, res) => {
   }
 };
 
+// @desc    Get feedbacks for owner's hostels
+// @route   GET /api/owner/feedbacks
+// @access  Private/Owner
+const getHostelFeedbacks = async (req, res) => {
+  try {
+    // Get all hostels owned by this owner
+    const hostels = await Hostel.find({ owner: req.user.id }).select('_id name');
+    const hostelIds = hostels.map(h => h._id);
+
+    // Get all feedbacks for these hostels
+    const feedbacks = await Feedback.find({ 
+      targetType: 'hostel', 
+      targetId: { $in: hostelIds } 
+    })
+      .populate('user', 'name email')
+      .populate('targetId', 'name address')
+      .sort({ createdAt: -1 });
+
+    res.json({ success: true, data: feedbacks });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   createHostel,
   getMyHostels,
@@ -744,4 +769,5 @@ module.exports = {
   getDeletionRequests,
   approveDeletionRequest,
   rejectDeletionRequest,
+  getHostelFeedbacks,
 };

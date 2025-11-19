@@ -16,7 +16,9 @@
     "zustand": "^4.4.1",
     "framer-motion": "^10.16.4",
     "recharts": "^2.10.3",
-    "lucide-react": "^0.292.0"
+    "lucide-react": "^0.292.0",
+    "mapbox-gl": "^3.0.0",
+    "react-map-gl": "^7.1.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.37",

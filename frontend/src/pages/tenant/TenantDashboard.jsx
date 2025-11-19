@@ -121,6 +121,14 @@ export default function TenantDashboard() {
   const [feedbackComment, setFeedbackComment] = useState('')
   const [feedbackLoading, setFeedbackLoading] = useState(false)
 
+  // Hostel rating state
+  const [showHostelRatingModal, setShowHostelRatingModal] = useState(false)
+  const [hostelRating, setHostelRating] = useState(0)
+  const [hostelReview, setHostelReview] = useState('')
+  const [hostelRatingLoading, setHostelRatingLoading] = useState(false)
+  const [myHostelFeedbacks, setMyHostelFeedbacks] = useState([])
+  const [hostelFeedbacksLoading, setHostelFeedbacksLoading] = useState(false)
+
   // Video modal state
   const [showVideoModal, setShowVideoModal] = useState(false)
   const [currentVideoUrl, setCurrentVideoUrl] = useState('')
@@ -1153,6 +1161,62 @@ export default function TenantDashboard() {
       alert('Failed to submit feedback: ' + (error.response?.data?.message || error.message))
     } finally {
       setFeedbackLoading(false)
+    }
+  }
+
+  // Fetch hostel feedbacks
+  const fetchHostelFeedbacks = async () => {
+    try {
+      setHostelFeedbacksLoading(true)
+      const response = await tenantAPI.getMyFeedbacks()
+      setMyHostelFeedbacks(response.data?.data || [])
+    } catch (error) {
+      console.error('Error fetching hostel feedbacks:', error)
+    } finally {
+      setHostelFeedbacksLoading(false)
+    }
+  }
+
+  // Submit hostel rating
+  const submitHostelRating = async () => {
+    if (hostelRating === 0) {
+      alert('Please provide a rating')
+      return
+    }
+
+    if (!hostelReview.trim()) {
+      alert('Please write a review')
+      return
+    }
+
+    // Find active contract to get hostel ID
+    const activeContract = myContracts.find(c => c.status === 'active')
+    if (!activeContract || !activeContract.hostel) {
+      alert('You need to have an active contract to rate a hostel')
+      return
+    }
+
+    try {
+      setHostelRatingLoading(true)
+      await tenantAPI.submitFeedback({
+        targetType: 'hostel',
+        targetId: activeContract.hostel._id,
+        rating: hostelRating,
+        comment: hostelReview.trim()
+      })
+
+      alert('✓ Hostel rating submitted successfully!')
+      setShowHostelRatingModal(false)
+      setHostelRating(0)
+      setHostelReview('')
+      
+      // Refresh feedbacks
+      await fetchHostelFeedbacks()
+    } catch (error) {
+      console.error('Error submitting hostel rating:', error)
+      alert('Failed to submit rating: ' + (error.response?.data?.message || error.message))
+    } finally {
+      setHostelRatingLoading(false)
     }
   }
 
@@ -2943,6 +3007,43 @@ export default function TenantDashboard() {
 
           {activeTab === 'feedback' && (
             <div className="space-y-6">
+              {/* Rate Current Hostel Section */}
+              <div className="card bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-2xl font-bold text-text-dark">🏠 Rate Your Hostel</h3>
+                    <p className="text-sm text-gray-600 mt-1">Share your experience about your current hostel</p>
+                  </div>
+                  {myContracts.find(c => c.status === 'active') && (
+                    <button
+                      onClick={() => setShowHostelRatingModal(true)}
+                      className="btn-primary"
+                    >
+                      ⭐ Rate Hostel
+                    </button>
+                  )}
+                </div>
+
+                {!myContracts.find(c => c.status === 'active') && (
+                  <div className="text-center py-8">
+                    <div className="text-5xl mb-3">🏠</div>
+                    <p className="text-gray-600">You need an active contract to rate a hostel</p>
+                  </div>
+                )}
+
+                {myContracts.find(c => c.status === 'active') && (
+                  <div className="bg-white rounded-lg p-4 border border-blue-200">
+                    <h4 className="font-bold text-lg mb-2">
+                      {myContracts.find(c => c.status === 'active').hostel?.name}
+                    </h4>
+                    <p className="text-sm text-gray-600">
+                      📍 {myContracts.find(c => c.status === 'active').hostel?.address?.city}, 
+                      {myContracts.find(c => c.status === 'active').hostel?.address?.state}
+                    </p>
+                  </div>
+                )}
+              </div>
+
               <div className="card">
                 <div className="flex items-center justify-between mb-6">
                   <div>
@@ -4244,6 +4345,110 @@ export default function TenantDashboard() {
                   className="flex-1 bg-gradient-to-r from-yellow-500 to-orange-500 text-white px-6 py-3 rounded-lg hover:from-yellow-600 hover:to-orange-600 transition-all font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {feedbackLoading ? 'Submitting...' : '✓ Submit Feedback'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Hostel Rating Modal */}
+      {showHostelRatingModal && myContracts.find(c => c.status === 'active') && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-gradient-to-r from-blue-500 to-indigo-500 text-white p-6 rounded-t-2xl">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h2 className="text-2xl font-bold">🏠 Rate Your Hostel</h2>
+                  <p className="text-sm text-white/90 mt-1">
+                    {myContracts.find(c => c.status === 'active').hostel?.name}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowHostelRatingModal(false)}
+                  className="text-white hover:bg-white/20 rounded-full p-2 transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* Hostel Info */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <p className="text-sm font-semibold text-text-dark mb-2">
+                  {myContracts.find(c => c.status === 'active').hostel?.name}
+                </p>
+                <p className="text-xs text-text-muted">
+                  📍 {myContracts.find(c => c.status === 'active').hostel?.address?.street}, 
+                  {myContracts.find(c => c.status === 'active').hostel?.address?.city}, 
+                  {myContracts.find(c => c.status === 'active').hostel?.address?.state}
+                </p>
+              </div>
+
+              {/* Rating Stars */}
+              <div>
+                <label className="block text-sm font-semibold text-text-dark mb-3">
+                  How would you rate this hostel? <span className="text-red-500">*</span>
+                </label>
+                <div className="flex justify-center gap-3">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      onClick={() => setHostelRating(star)}
+                      className={`text-5xl transition-all transform hover:scale-110 ${
+                        hostelRating >= star 
+                          ? 'text-yellow-500' 
+                          : 'text-gray-300 hover:text-yellow-400'
+                      }`}
+                    >
+                      ★
+                    </button>
+                  ))}
+                </div>
+                {hostelRating > 0 && (
+                  <p className="text-center text-sm text-text-muted mt-2">
+                    {hostelRating === 1 && '😞 Poor'}
+                    {hostelRating === 2 && '😐 Fair'}
+                    {hostelRating === 3 && '🙂 Good'}
+                    {hostelRating === 4 && '😊 Very Good'}
+                    {hostelRating === 5 && '🤩 Excellent'}
+                  </p>
+                )}
+              </div>
+
+              {/* Review */}
+              <div>
+                <label className="block text-sm font-semibold text-text-dark mb-2">
+                  Write your review <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={hostelReview}
+                  onChange={(e) => setHostelReview(e.target.value)}
+                  placeholder="Tell us about the facilities, cleanliness, staff, security, location, etc..."
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                  rows="5"
+                />
+                <p className="text-xs text-text-muted mt-1">
+                  {hostelReview.length}/500 characters
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowHostelRatingModal(false)}
+                  className="flex-1 px-6 py-3 border-2 border-gray-300 text-text-dark rounded-lg hover:bg-gray-50 transition-colors font-semibold"
+                  disabled={hostelRatingLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={submitHostelRating}
+                  disabled={hostelRatingLoading || hostelRating === 0 || !hostelReview.trim()}
+                  className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-500 text-white px-6 py-3 rounded-lg hover:from-blue-600 hover:to-indigo-600 transition-all font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {hostelRatingLoading ? 'Submitting...' : '✓ Submit Rating'}
                 </button>
               </div>
             </div>
