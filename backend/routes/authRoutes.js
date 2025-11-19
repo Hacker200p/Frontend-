@@ -1,6 +1,17 @@
 const express = require('express');
 const router = express.Router();
-const { register, login, getMe, updateProfile, verifyOTP, resendOTP, refreshTokenController } = require('../controllers/authController');
+const { 
+  register, 
+  login, 
+  getMe, 
+  updateProfile, 
+  verifyOTP, 
+  resendOTP, 
+  refreshTokenController,
+  sendPhoneChangeOTP,
+  verifyPhoneChangeOTP,
+  changePassword
+} = require('../controllers/authController');
 const { protect } = require('../middleware/authMiddleware');
 const { validateRegister, validateLogin, handleValidationErrors } = require('../utils/validators');
 
@@ -14,6 +25,13 @@ router.post('/login', validateLogin, handleValidationErrors, login);
 router.post('/refresh-token', refreshTokenController);
 router.get('/me', protect, getMe);
 router.put('/profile', protect, updateProfile);
+
+// Phone number change with OTP verification
+router.post('/send-phone-change-otp', protect, sendPhoneChangeOTP);
+router.post('/verify-phone-change-otp', protect, verifyPhoneChangeOTP);
+
+// Password change
+router.put('/change-password', protect, changePassword);
 
 // Get payment config (public - safe to expose key ID)
 router.get('/payment-config', (req, res) => {

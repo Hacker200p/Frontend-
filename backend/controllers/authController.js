@@ -316,18 +316,112 @@ const getMe = async (req, res) => {
 // @access  Private
 const updateProfile = async (req, res) => {
   try {
-    const { name, phone, foodPreference } = req.body;
+    const { email, foodPreference } = req.body;
 
     const user = await User.findById(req.user.id);
     
-    if (name) user.name = name;
-    if (phone) user.phone = phone;
+    // Name cannot be changed
+    // Phone requires OTP verification (use separate endpoint)
+    if (email) user.email = email;
     if (foodPreference) user.foodPreference = foodPreference;
 
     await user.save();
 
     res.json({ success: true, data: user });
   } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Send OTP for phone number change
+// @route   POST /api/auth/send-phone-change-otp
+// @access  Private
+const sendPhoneChangeOTP = async (req, res) => {
+  try {
+    const { newPhone } = req.body;
+
+    if (!newPhone) {
+      return res.status(400).json({ success: false, message: 'New phone number is required' });
+    }
+
+    // Validate phone number format (10 digits)
+    if (!/^[0-9]{10}$/.test(newPhone)) {
+      return res.status(400).json({ success: false, message: 'Phone number must be 10 digits' });
+    }
+
+    // Check if phone is already in use by another user
+    const existingUser = await User.findOne({ phone: newPhone });
+    if (existingUser && existingUser._id.toString() !== req.user.id) {
+      return res.status(400).json({ success: false, message: 'Phone number already in use' });
+    }
+
+    // Generate OTP
+    const otp = generateOTP();
+    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    // Store OTP temporarily (using phone change specific fields)
+    const user = await User.findById(req.user.id);
+    user.phoneChangeOTP = otp;
+    user.phoneChangeOTPExpiry = otpExpiry;
+    user.pendingPhoneNumber = newPhone;
+    await user.save();
+
+    // Send OTP via SMS
+    await sendSMS(newPhone, `Your SafeStay Hub phone change verification code is: ${otp}. This code will expire in 10 minutes.`);
+
+    res.status(200).json({
+      success: true,
+      message: 'OTP sent to new phone number',
+    });
+  } catch (error) {
+    console.error('Send phone change OTP error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// @desc    Verify OTP and update phone number
+// @route   POST /api/auth/verify-phone-change-otp
+// @access  Private
+const verifyPhoneChangeOTP = async (req, res) => {
+  try {
+    const { newPhone, otp } = req.body;
+
+    if (!newPhone || !otp) {
+      return res.status(400).json({ success: false, message: 'Phone number and OTP are required' });
+    }
+
+    const user = await User.findById(req.user.id);
+
+    if (!user.phoneChangeOTP || !user.phoneChangeOTPExpiry) {
+      return res.status(400).json({ success: false, message: 'No OTP found. Please request a new OTP.' });
+    }
+
+    if (user.phoneChangeOTPExpiry < new Date()) {
+      return res.status(400).json({ success: false, message: 'OTP has expired. Please request a new OTP.' });
+    }
+
+    if (user.phoneChangeOTP !== otp) {
+      return res.status(400).json({ success: false, message: 'Invalid OTP' });
+    }
+
+    if (user.pendingPhoneNumber !== newPhone) {
+      return res.status(400).json({ success: false, message: 'Phone number mismatch' });
+    }
+
+    // Update phone number
+    user.phone = newPhone;
+    user.phoneChangeOTP = undefined;
+    user.phoneChangeOTPExpiry = undefined;
+    user.pendingPhoneNumber = undefined;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Phone number updated successfully',
+      data: user
+    });
+  } catch (error) {
+    console.error('Verify phone change OTP error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -383,4 +477,57 @@ const refreshTokenController = async (req, res) => {
   }
 };
 
-module.exports = { register, login, getMe, updateProfile, verifyOTP, resendOTP, refreshTokenController };
+// @desc    Change user password
+// @route   PUT /api/auth/change-password
+// @access  Private
+const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ success: false, message: 'Current password and new password are required' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ success: false, message: 'New password must be at least 6 characters long' });
+    }
+
+    // Get user with password field
+    const user = await User.findById(req.user.id).select('+password');
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // Verify current password
+    const isPasswordMatch = await user.matchPassword(currentPassword);
+    if (!isPasswordMatch) {
+      return res.status(401).json({ success: false, message: 'Current password is incorrect' });
+    }
+
+    // Update password
+    user.password = newPassword;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Password changed successfully'
+    });
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+module.exports = { 
+  register, 
+  login, 
+  getMe, 
+  updateProfile, 
+  verifyOTP, 
+  resendOTP, 
+  refreshTokenController,
+  sendPhoneChangeOTP,
+  verifyPhoneChangeOTP,
+  changePassword
+};

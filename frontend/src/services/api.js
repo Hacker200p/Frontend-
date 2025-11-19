@@ -158,12 +158,15 @@ export const canteenAPI = {
     return api.put(`/canteen/orders/${orderId}/status`, payload)
   },
   getCanteenFeedbacks: (canteenId) => api.get(`/canteen/${canteenId}/feedbacks`),
+  rateTenant: (orderId, data) => api.post(`/canteen/orders/${orderId}/rate-tenant`, data),
 }
 
 // Contract API calls
 export const contractAPI = {
   getContracts: () => api.get('/contracts'),
   getById: (id) => api.get(`/contracts/${id}`),
+  signContract: (id) => api.put(`/contracts/${id}/sign`),
+  downloadContract: (id) => api.get(`/contracts/${id}/download`, { responseType: 'blob' }),
 }
 
 // Expense API calls
@@ -178,12 +181,16 @@ export const tenantAPI = {
   getHostelDetails: (id) => api.get(`/tenant/hostels/${id}`),
   getExpenses: () => api.get('/tenant/expenses'),
   addExpense: (data) => api.post('/tenant/expenses', data),
+  deleteExpense: (id) => api.delete(`/tenant/expenses/${id}`),
   submitFeedback: (data) => api.post('/tenant/feedback', data),
   submitOrderFeedback: (orderId, data) => api.post(`/tenant/orders/${orderId}/feedback`, data),
   getContracts: () => api.get('/tenant/contracts'),
   getMyContracts: () => api.get('/tenant/contracts'),
   createBookingOrder: (data) => api.post('/tenant/create-booking-order', data),
   bookRoom: (data) => api.post('/tenant/book-room', data),
+  requestDeletion: (data) => api.post('/tenant/deletion-request', data),
+  getDeletionRequest: () => api.get('/tenant/deletion-request'),
+  cancelDeletionRequest: (id) => api.delete(`/tenant/deletion-request/${id}`),
 }
 
 // Owner API calls
@@ -222,6 +229,10 @@ export const ownerAPI = {
   getHostelTenants: (hostelId) => api.get(`/owner/hostels/${hostelId}/tenants`),
   approveTenantContract: (contractId) => api.post(`/owner/tenants/${contractId}/approve`),
   terminateTenantContract: (contractId) => api.post(`/owner/tenants/${contractId}/terminate`),
+  // Deletion requests
+  getDeletionRequests: (status) => api.get('/owner/deletion-requests', { params: { status } }),
+  approveDeletionRequest: (id, message) => api.put(`/owner/deletion-requests/${id}/approve`, { message }),
+  rejectDeletionRequest: (id, message) => api.put(`/owner/deletion-requests/${id}/reject`, { message }),
 }
 
 export default api

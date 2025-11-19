@@ -56,6 +56,14 @@ export default function OwnerDashboard() {
   const [selectedTenantHostel, setSelectedTenantHostel] = useState('all')
   const [tenantSearchQuery, setTenantSearchQuery] = useState('')
   
+  // Deletion requests state
+  const [deletionRequests, setDeletionRequests] = useState([])
+  const [pendingDeletionCount, setPendingDeletionCount] = useState(0)
+  const [selectedDeletionRequest, setSelectedDeletionRequest] = useState(null)
+  const [showDeletionModal, setShowDeletionModal] = useState(false)
+  const [deletionResponse, setDeletionResponse] = useState('')
+  const [processingDeletion, setProcessingDeletion] = useState(false)
+  
   // Video modal state
   const [showVideoModal, setShowVideoModal] = useState(false)
   const [currentVideoUrl, setCurrentVideoUrl] = useState('')
@@ -174,6 +182,9 @@ export default function OwnerDashboard() {
     
     // Load tenants
     fetchTenants()
+    
+    // Load deletion requests
+    fetchDeletionRequests()
   }, [])
 
   const fetchTenants = async () => {
@@ -186,6 +197,70 @@ export default function OwnerDashboard() {
       setTenants([])
     } finally {
       setTenantsLoading(false)
+    }
+  }
+
+  const fetchDeletionRequests = async () => {
+    try {
+      const res = await ownerAPI.getDeletionRequests()
+      const requests = res.data?.data || []
+      setDeletionRequests(requests)
+      setPendingDeletionCount(requests.filter(r => r.status === 'pending').length)
+    } catch (error) {
+      console.error('Error fetching deletion requests:', error)
+      setDeletionRequests([])
+      setPendingDeletionCount(0)
+    }
+  }
+
+  const handleViewDeletionRequest = (request) => {
+    setSelectedDeletionRequest(request)
+    setShowDeletionModal(true)
+    setDeletionResponse('')
+    setActiveTab('tenants')
+  }
+
+  const handleApproveDeletionRequest = async () => {
+    if (!selectedDeletionRequest) return
+    
+    setProcessingDeletion(true)
+    try {
+      await ownerAPI.approveDeletionRequest(selectedDeletionRequest._id, deletionResponse || 'Approved')
+      alert('Account deletion request approved. Tenant account has been deactivated.')
+      setShowDeletionModal(false)
+      setSelectedDeletionRequest(null)
+      setDeletionResponse('')
+      await fetchDeletionRequests()
+      await fetchTenants()
+    } catch (error) {
+      console.error('Error approving deletion request:', error)
+      alert(error.response?.data?.message || 'Failed to approve deletion request')
+    } finally {
+      setProcessingDeletion(false)
+    }
+  }
+
+  const handleRejectDeletionRequest = async () => {
+    if (!selectedDeletionRequest) return
+    
+    if (!deletionResponse || deletionResponse.trim().length === 0) {
+      alert('Please provide a reason for rejection')
+      return
+    }
+    
+    setProcessingDeletion(true)
+    try {
+      await ownerAPI.rejectDeletionRequest(selectedDeletionRequest._id, deletionResponse)
+      alert('Account deletion request rejected')
+      setShowDeletionModal(false)
+      setSelectedDeletionRequest(null)
+      setDeletionResponse('')
+      await fetchDeletionRequests()
+    } catch (error) {
+      console.error('Error rejecting deletion request:', error)
+      alert(error.response?.data?.message || 'Failed to reject deletion request')
+    } finally {
+      setProcessingDeletion(false)
     }
   }
 
@@ -384,6 +459,25 @@ export default function OwnerDashboard() {
                   </button>
                 </div>
               </div>
+
+              {pendingDeletionCount > 0 && (
+                <div className="card border-2 border-orange-300 bg-orange-50">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xl font-bold text-orange-800 mb-2">⚠️ Pending Account Deletion Requests</h3>
+                      <p className="text-orange-700 mb-4">
+                        You have <strong>{pendingDeletionCount}</strong> tenant{pendingDeletionCount > 1 ? 's' : ''} requesting account deletion
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setActiveTab('tenants')}
+                      className="px-6 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition font-semibold"
+                    >
+                      Review Requests
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div className="card">
                 <h3 className="text-2xl font-bold mb-4 text-text-dark">Recent Activity</h3>
@@ -932,6 +1026,33 @@ export default function OwnerDashboard() {
 
           {activeTab === 'tenants' && (
             <div className="space-y-6">
+              {/* Deletion Requests Section */}
+              {deletionRequests.filter(r => r.status === 'pending').length > 0 && (
+                <div className="card border-2 border-orange-300 bg-orange-50">
+                  <h3 className="text-xl font-bold text-orange-800 mb-4">🚨 Account Deletion Requests</h3>
+                  <div className="space-y-3">
+                    {deletionRequests.filter(r => r.status === 'pending').map((request) => (
+                      <div key={request._id} className="bg-white p-4 rounded-lg border border-orange-200 flex items-center justify-between">
+                        <div className="flex-1">
+                          <p className="font-semibold text-gray-800">{request.tenant?.name}</p>
+                          <p className="text-sm text-gray-600">📧 {request.tenant?.email} • 📞 {request.tenant?.phone}</p>
+                          <p className="text-sm text-gray-600 mt-1">🏢 {request.hostel?.name}</p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Requested: {new Date(request.requestedAt).toLocaleDateString('en-IN')}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleViewDeletionRequest(request)}
+                          className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition font-semibold"
+                        >
+                          Review Request
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div className="card">
                 <div className="flex items-center justify-between mb-6">
                   <h3 className="text-2xl font-bold text-text-dark">Tenant Management</h3>
@@ -2330,6 +2451,124 @@ export default function OwnerDashboard() {
             >
               Your browser does not support the video tag.
             </video>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Deletion Request Modal */}
+    {showDeletionModal && selectedDeletionRequest && (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+        <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-2xl font-bold text-red-800">⚠️ Account Deletion Request</h3>
+            <button
+              onClick={() => {
+                setShowDeletionModal(false)
+                setSelectedDeletionRequest(null)
+                setDeletionResponse('')
+              }}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              <X className="h-6 w-6" />
+            </button>
+          </div>
+
+          <div className="space-y-6">
+            {/* Tenant Information */}
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <h4 className="font-semibold text-gray-800 mb-3">Tenant Information</h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-600">Name</p>
+                  <p className="font-semibold text-gray-800">{selectedDeletionRequest.tenant?.name}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Email</p>
+                  <p className="font-semibold text-gray-800">{selectedDeletionRequest.tenant?.email}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Phone</p>
+                  <p className="font-semibold text-gray-800">{selectedDeletionRequest.tenant?.phone}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Hostel</p>
+                  <p className="font-semibold text-gray-800">{selectedDeletionRequest.hostel?.name}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Request Details */}
+            <div className="bg-blue-50 p-4 rounded-lg">
+              <h4 className="font-semibold text-gray-800 mb-2">Request Details</h4>
+              <p className="text-sm text-gray-600 mb-2">
+                <strong>Requested on:</strong> {new Date(selectedDeletionRequest.requestedAt).toLocaleDateString('en-IN', {
+                  day: 'numeric',
+                  month: 'long',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit'
+                })}
+              </p>
+              <p className="text-sm text-gray-600 mb-2">
+                <strong>Reason:</strong>
+              </p>
+              <div className="bg-white p-3 rounded border border-blue-200">
+                <p className="text-gray-800">{selectedDeletionRequest.reason}</p>
+              </div>
+            </div>
+
+            {selectedDeletionRequest.contract && (
+              <div className="bg-yellow-50 p-4 rounded-lg">
+                <h4 className="font-semibold text-gray-800 mb-2">⚠️ Active Contract</h4>
+                <p className="text-sm text-yellow-800">
+                  This tenant has an active contract (Contract #{selectedDeletionRequest.contract.contractNumber}).
+                  Approving this request will terminate the contract and deactivate their account.
+                </p>
+              </div>
+            )}
+
+            {/* Response Input */}
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Your Response (Optional for approval, Required for rejection)
+              </label>
+              <textarea
+                value={deletionResponse}
+                onChange={(e) => setDeletionResponse(e.target.value)}
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-primary focus:outline-none resize-none"
+                placeholder="Add any comments or reasons for your decision..."
+                rows="4"
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShowDeletionModal(false)
+                  setSelectedDeletionRequest(null)
+                  setDeletionResponse('')
+                }}
+                className="flex-1 px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRejectDeletionRequest}
+                disabled={processingDeletion}
+                className="flex-1 px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition font-semibold disabled:opacity-50"
+              >
+                {processingDeletion ? 'Processing...' : 'Reject Request'}
+              </button>
+              <button
+                onClick={handleApproveDeletionRequest}
+                disabled={processingDeletion}
+                className="flex-1 px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-semibold disabled:opacity-50"
+              >
+                {processingDeletion ? 'Processing...' : 'Approve & Delete Account'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
