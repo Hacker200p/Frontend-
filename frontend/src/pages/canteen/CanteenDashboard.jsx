@@ -602,9 +602,9 @@ export default function CanteenDashboard() {
       <aside
         className={`${
           sidebarOpen ? 'w-64' : 'w-0'
-        } bg-primary text-white transition-all duration-300 overflow-hidden fixed md:relative z-40 h-full`}
+        } bg-primary text-white transition-all duration-300 overflow-hidden fixed md:relative z-40 h-full flex flex-col`}
       >
-        <div className="p-6">
+        <div className="p-6 flex-1 overflow-y-auto">
           <h1 className="text-2xl font-bold mb-8">SafeStay Hub</h1>
 
           <nav className="space-y-2">
@@ -623,7 +623,7 @@ export default function CanteenDashboard() {
           </nav>
         </div>
 
-        <div className="absolute bottom-6 left-6 right-6">
+        <div className="p-6 border-t border-blue-400">
           <button
             onClick={handleLogout}
             className="w-full flex items-center gap-2 bg-red-600 px-4 py-2 rounded-lg hover:bg-red-700 transition"

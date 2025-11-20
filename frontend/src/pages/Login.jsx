@@ -4,7 +4,7 @@ import { useAuthStore } from '../store/authStore'
 
 export default function Login() {
   const navigate = useNavigate()
-  const { login, error, loading, clearError } = useAuthStore()
+  const { login, error, loading, clearError, user: storeUser } = useAuthStore()
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -23,7 +23,44 @@ export default function Login() {
     e.preventDefault()
     try {
       await login(formData)
-      navigate('/dashboard')
+      // Get the updated user from store after login completes
+      const userData = useAuthStore.getState().user
+      
+      console.log('User data from store:', userData)
+      console.log('User role:', userData?.userRole)
+      
+      // Check if there's a hostel redirect from landing page
+      const redirectHostelId = sessionStorage.getItem('redirectHostelId')
+      console.log('Redirect hostel ID from session:', redirectHostelId)
+      
+      // Redirect based on user role
+      if (userData?.userRole === 'tenant') {
+        if (redirectHostelId) {
+          console.log('Redirecting to tenant dashboard with hostel ID:', redirectHostelId)
+          // Clear the stored hostel ID and navigate to tenant dashboard with state
+          sessionStorage.removeItem('redirectHostelId')
+          navigate('/tenant', { state: { selectedHostelId: redirectHostelId }, replace: true })
+        } else {
+          console.log('Navigating to /dashboard')
+          navigate('/dashboard') // Tenants see the map page
+        }
+      } else if (userData?.userRole === 'owner') {
+        console.log('Navigating to /owner')
+        sessionStorage.removeItem('redirectHostelId') // Clear if exists
+        navigate('/owner')
+      } else if (userData?.userRole === 'provider') {
+        console.log('Navigating to /canteen')
+        sessionStorage.removeItem('redirectHostelId') // Clear if exists
+        navigate('/canteen')
+      } else if (userData?.userRole === 'admin') {
+        console.log('Navigating to /admin')
+        sessionStorage.removeItem('redirectHostelId') // Clear if exists
+        navigate('/admin')
+      } else {
+        console.log('Default navigation to /dashboard, userData:', userData)
+        sessionStorage.removeItem('redirectHostelId') // Clear if exists
+        navigate('/dashboard')
+      }
     } catch (err) {
       console.error('Login error:', err)
     }

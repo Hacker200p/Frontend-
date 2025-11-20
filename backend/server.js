@@ -75,6 +75,10 @@ io.on('connection', (socket) => {
 // Make io accessible to routes
 app.set('io', io);
 
+// Public routes (no authentication required)
+const { searchHostels } = require('./controllers/tenantController');
+app.get('/api/hostels/search', searchHostels);
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);

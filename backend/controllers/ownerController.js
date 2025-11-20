@@ -726,7 +726,7 @@ const rejectDeletionRequest = async (req, res) => {
   }
 };
 
-// @desc    Get feedbacks for owner's hostels
+// @desc    Get feedbacks for owner's hostels (latest rating per tenant only)
 // @route   GET /api/owner/feedbacks
 // @access  Private/Owner
 const getHostelFeedbacks = async (req, res) => {
@@ -735,14 +735,44 @@ const getHostelFeedbacks = async (req, res) => {
     const hostels = await Hostel.find({ owner: req.user.id }).select('_id name');
     const hostelIds = hostels.map(h => h._id);
 
-    // Get all feedbacks for these hostels
-    const feedbacks = await Feedback.find({ 
-      targetType: 'hostel', 
-      targetId: { $in: hostelIds } 
-    })
-      .populate('user', 'name email')
-      .populate('targetId', 'name address')
-      .sort({ createdAt: -1 });
+    // Get all feedbacks for these hostels, grouped by user and hostel
+    // For each user-hostel combination, only get the latest feedback
+    const feedbacks = await Feedback.aggregate([
+      {
+        $match: {
+          targetType: 'hostel',
+          targetId: { $in: hostelIds }
+        }
+      },
+      // Sort by createdAt descending to get latest first
+      {
+        $sort: { createdAt: -1 }
+      },
+      // Group by user and targetId (hostel) to get only the latest feedback per user per hostel
+      {
+        $group: {
+          _id: {
+            user: '$user',
+            targetId: '$targetId'
+          },
+          doc: { $first: '$$ROOT' } // Take the first (latest) document
+        }
+      },
+      // Replace root with the document
+      {
+        $replaceRoot: { newRoot: '$doc' }
+      },
+      // Sort again by createdAt descending for display
+      {
+        $sort: { createdAt: -1 }
+      }
+    ]);
+
+    // Populate user and targetId fields manually since aggregate doesn't support populate
+    await Feedback.populate(feedbacks, [
+      { path: 'user', select: 'name email' },
+      { path: 'targetId', select: 'name address' }
+    ]);
 
     res.json({ success: true, data: feedbacks });
   } catch (error) {

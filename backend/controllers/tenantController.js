@@ -8,15 +8,28 @@ const DeletionRequest = require('../models/DeletionRequest');
 const User = require('../models/User');
 
 // @desc    Search hostels
-// @route   GET /api/tenant/hostels/search
-// @access  Private/Tenant
+// @route   GET /api/tenant/hostels/search OR /api/hostels/search (public)
+// @access  Private/Tenant or Public
 const searchHostels = async (req, res) => {
   try {
-    const { city, hostelType, minPrice, maxPrice, page = 1, limit = 10, showAll } = req.query;
+    const { city, hostelType, minPrice, maxPrice, page = 1, limit = 10, showAll, search } = req.query;
     
-    // If showAll is true, don't filter by verification status (useful for testing/first-time users)
-    const query = showAll === 'true' ? {} : { verificationStatus: 'verified', isActive: true };
+    // If showAll is true or user is not authenticated, don't filter by verification status
+    const isPublicAccess = !req.user;
+    const query = (showAll === 'true' || isPublicAccess) ? {} : { verificationStatus: 'verified', isActive: true };
 
+    // Handle general search parameter (case-insensitive search across name, city, state)
+    if (search) {
+      const searchRegex = new RegExp(search, 'i');
+      query.$or = [
+        { name: searchRegex },
+        { 'address.city': searchRegex },
+        { 'address.state': searchRegex },
+        { city: searchRegex },
+        { state: searchRegex }
+      ];
+    }
+    
     if (city) query['address.city'] = new RegExp(city, 'i');
     if (hostelType) query.hostelType = hostelType;
     if (minPrice || maxPrice) {
@@ -167,22 +180,59 @@ const submitFeedback = async (req, res) => {
   try {
     const { targetType, targetId, rating, comment } = req.body;
 
-    const feedback = await Feedback.create({
+    console.log('Submit feedback request:', { targetType, targetId, rating, comment, userId: req.user.id });
+
+    // Check if user already has feedback for this target
+    let feedback = await Feedback.findOne({
       user: req.user.id,
       targetType,
-      targetId,
-      rating,
-      comment,
+      targetId
     });
+
+    console.log('Existing feedback found:', feedback);
+
+    if (feedback) {
+      // Update existing feedback
+      console.log('Updating existing feedback...');
+      feedback.rating = rating;
+      feedback.comment = comment;
+      await feedback.save();
+      console.log('Feedback updated:', feedback);
+    } else {
+      // Create new feedback
+      console.log('Creating new feedback...');
+      feedback = await Feedback.create({
+        user: req.user.id,
+        targetType,
+        targetId,
+        rating,
+        comment,
+      });
+      console.log('Feedback created:', feedback);
+    }
 
     // Update rating for target
     if (targetType === 'hostel') {
       const hostel = await Hostel.findById(targetId);
-      const feedbacks = await Feedback.find({ targetType: 'hostel', targetId });
-      const avgRating = feedbacks.reduce((sum, f) => sum + f.rating, 0) / feedbacks.length;
+      
+      // Get all unique feedbacks (latest per user)
+      const allFeedbacks = await Feedback.find({ targetType: 'hostel', targetId });
+      
+      // Group by user and get only latest feedback per user
+      const latestFeedbacksMap = new Map();
+      allFeedbacks.forEach(fb => {
+        const userId = fb.user.toString();
+        const existing = latestFeedbacksMap.get(userId);
+        if (!existing || new Date(fb.updatedAt) > new Date(existing.updatedAt)) {
+          latestFeedbacksMap.set(userId, fb);
+        }
+      });
+      
+      const latestFeedbacks = Array.from(latestFeedbacksMap.values());
+      const avgRating = latestFeedbacks.reduce((sum, f) => sum + f.rating, 0) / latestFeedbacks.length;
       
       hostel.rating = avgRating;
-      hostel.reviewCount = feedbacks.length;
+      hostel.reviewCount = latestFeedbacks.length;
       await hostel.save();
     }
 
@@ -651,6 +701,47 @@ const cancelDeletionRequest = async (req, res) => {
   }
 };
 
+// @desc    Get tenant's feedbacks
+// @route   GET /api/tenant/feedbacks
+// @access  Private/Tenant
+const getMyFeedbacks = async (req, res) => {
+  try {
+    const feedbacks = await Feedback.find({ user: req.user.id })
+      .populate('user', 'name email')
+      .sort('-createdAt');
+
+    // Manually populate targetId based on targetType
+    const Hostel = require('../models/Hostel');
+    const Canteen = require('../models/Canteen');
+    
+    const populatedFeedbacks = await Promise.all(
+      feedbacks.map(async (feedback) => {
+        let target = null;
+        if (feedback.targetType === 'hostel') {
+          target = await Hostel.findById(feedback.targetId);
+        } else if (feedback.targetType === 'canteen') {
+          target = await Canteen.findById(feedback.targetId);
+        }
+        
+        return {
+          _id: feedback._id,
+          rating: feedback.rating,
+          comment: feedback.comment,
+          targetType: feedback.targetType,
+          target: target,
+          createdAt: feedback.createdAt,
+          updatedAt: feedback.updatedAt,
+        };
+      })
+    );
+
+    res.status(200).json({ success: true, data: populatedFeedbacks });
+  } catch (error) {
+    console.error('Get feedbacks error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   searchHostels,
   getHostelDetails,
@@ -665,4 +756,5 @@ module.exports = {
   requestAccountDeletion,
   getMyDeletionRequest,
   cancelDeletionRequest,
+  getMyFeedbacks,
 };

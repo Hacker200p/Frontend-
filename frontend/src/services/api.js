@@ -184,6 +184,7 @@ export const tenantAPI = {
   addExpense: (data) => api.post('/tenant/expenses', data),
   deleteExpense: (id) => api.delete(`/tenant/expenses/${id}`),
   submitFeedback: (data) => api.post('/tenant/feedback', data),
+  getMyFeedbacks: () => api.get('/tenant/feedbacks'),
   submitOrderFeedback: (orderId, data) => api.post(`/tenant/orders/${orderId}/feedback`, data),
   getContracts: () => api.get('/tenant/contracts'),
   getMyContracts: () => api.get('/tenant/contracts'),

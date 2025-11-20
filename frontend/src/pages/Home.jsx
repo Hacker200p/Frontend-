@@ -1,8 +1,16 @@
-import { Link } from 'react-router-dom'
+import { useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Star, Shield, FileText, Camera, Utensils, Phone, MapPin, DollarSign, Users } from 'lucide-react'
+import { hostelAPI } from '../services/api'
 
 export default function Home() {
+  const navigate = useNavigate()
+  const [searchLocation, setSearchLocation] = useState('')
+  const [priceRange, setPriceRange] = useState('')
+  const [searchResults, setSearchResults] = useState([])
+  const [searching, setSearching] = useState(false)
+  const [searched, setSearched] = useState(false)
   const features = [
     {
       icon: Shield,
@@ -57,6 +65,35 @@ export default function Home() {
     },
   ]
 
+  const handleSearch = async () => {
+    setSearching(true)
+    setSearched(true)
+    try {
+      const params = {}
+      if (searchLocation) params.search = searchLocation
+      if (priceRange) {
+        const [min, max] = priceRange.split('-')
+        if (min) params.minPrice = min
+        if (max) params.maxPrice = max
+      }
+      const response = await hostelAPI.search(params)
+      setSearchResults(response.data.data || [])
+    } catch (error) {
+      console.error('Search failed:', error)
+      setSearchResults([])
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  const handleBookClick = (hostelId) => {
+    // Store the hostel ID in sessionStorage to redirect after login
+    console.log('Storing hostel ID in sessionStorage:', hostelId)
+    sessionStorage.setItem('redirectHostelId', hostelId)
+    console.log('Stored value:', sessionStorage.getItem('redirectHostelId'))
+    navigate('/login')
+  }
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -110,16 +147,28 @@ export default function Home() {
           <div className="flex flex-col md:flex-row gap-4 max-w-2xl mx-auto mb-8">
             <input
               type="text"
-              placeholder="Search location..."
+              placeholder="Search location, city, or hostel name..."
+              value={searchLocation}
+              onChange={(e) => setSearchLocation(e.target.value)}
               className="flex-1 px-4 py-3 rounded-lg text-text-dark focus:outline-none focus:ring-2 focus:ring-accent"
             />
-            <select className="px-4 py-3 rounded-lg text-text-dark focus:outline-none focus:ring-2 focus:ring-accent">
-              <option>All Prices</option>
-              <option>₹5000 - ₹10000</option>
-              <option>₹10000 - ₹15000</option>
-              <option>₹15000+</option>
+            <select 
+              value={priceRange}
+              onChange={(e) => setPriceRange(e.target.value)}
+              className="px-4 py-3 rounded-lg text-text-dark focus:outline-none focus:ring-2 focus:ring-accent"
+            >
+              <option value="">All Prices</option>
+              <option value="5000-10000">₹5000 - ₹10000</option>
+              <option value="10000-15000">₹10000 - ₹15000</option>
+              <option value="15000-">₹15000+</option>
             </select>
-            <button className="btn-accent px-8">Search Now</button>
+            <button 
+              onClick={handleSearch}
+              disabled={searching}
+              className="btn-accent px-8"
+            >
+              {searching ? 'Searching...' : 'Search Now'}
+            </button>
           </div>
 
           <Link to="/register" className="inline-block btn-accent">
@@ -127,6 +176,111 @@ export default function Home() {
           </Link>
         </motion.div>
       </section>
+
+      {/* Search Results Section */}
+      {searched && (
+        <section className="max-w-7xl mx-auto px-4 py-12">
+          <h2 className="text-3xl font-bold mb-8 text-text-dark">
+            {searchResults.length > 0 
+              ? `Found ${searchResults.length} hostel${searchResults.length > 1 ? 's' : ''}`
+              : 'No hostels found'}
+          </h2>
+
+          {searchResults.length > 0 ? (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {searchResults.map((hostel) => (
+                <motion.div
+                  key={hostel._id}
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="card hover:shadow-lg transition"
+                >
+                  {hostel.images && hostel.images.length > 0 && (
+                    <img
+                      src={hostel.images[0]}
+                      alt={hostel.name}
+                      className="w-full h-48 object-cover rounded-t-lg mb-4"
+                    />
+                  )}
+                  
+                  <h3 className="text-xl font-bold text-text-dark mb-2">{hostel.name}</h3>
+                  
+                  <div className="flex items-center gap-2 text-text-muted mb-2">
+                    <MapPin className="w-4 h-4" />
+                    <span className="text-sm">
+                      {hostel.address?.city || hostel.city}, {hostel.address?.state || hostel.state}
+                    </span>
+                  </div>
+
+                  {hostel.description && (
+                    <p className="text-text-muted text-sm mb-4 line-clamp-2">
+                      {hostel.description}
+                    </p>
+                  )}
+
+                  <div className="mb-4">
+                    <div className="flex items-center gap-2 text-text-dark font-semibold mb-2">
+                      <DollarSign className="w-4 h-4" />
+                      Starting from ₹{hostel.minRent || 'N/A'}/month
+                    </div>
+                    
+                    {hostel.amenities && hostel.amenities.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {hostel.amenities.slice(0, 3).map((amenity, idx) => (
+                          <span 
+                            key={idx}
+                            className="text-xs bg-blue-100 text-primary px-2 py-1 rounded"
+                          >
+                            {amenity}
+                          </span>
+                        ))}
+                        {hostel.amenities.length > 3 && (
+                          <span className="text-xs text-text-muted">
+                            +{hostel.amenities.length - 3} more
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    {hostel.rating && (
+                      <div className="flex items-center gap-1">
+                        <Star className="w-4 h-4 fill-accent text-accent" />
+                        <span className="text-sm font-semibold">{hostel.rating}</span>
+                      </div>
+                    )}
+                    
+                    <button
+                      onClick={() => handleBookClick(hostel._id)}
+                      className="btn-primary text-sm"
+                    >
+                      Book Now
+                    </button>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12">
+              <p className="text-text-muted mb-4">
+                No hostels match your search criteria. Try adjusting your filters.
+              </p>
+              <button 
+                onClick={() => {
+                  setSearchLocation('')
+                  setPriceRange('')
+                  setSearched(false)
+                  setSearchResults([])
+                }}
+                className="btn-secondary"
+              >
+                Clear Search
+              </button>
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Features Section */}
       <section id="features" className="max-w-7xl mx-auto px-4 py-24">

@@ -14,6 +14,7 @@ const {
   requestAccountDeletion,
   getMyDeletionRequest,
   cancelDeletionRequest,
+  getMyFeedbacks,
 } = require('../controllers/tenantController');
 const { protect } = require('../middleware/authMiddleware');
 const { authorize } = require('../middleware/roleMiddleware');
@@ -27,6 +28,7 @@ router.get('/expenses', getMyExpenses);
 router.post('/expenses', addExpense);
 router.delete('/expenses/:id', deleteExpense);
 router.post('/feedback', submitFeedback);
+router.get('/feedbacks', getMyFeedbacks);
 router.post('/orders/:orderId/feedback', submitOrderFeedback);
 router.get('/contracts', getMyContracts);
 router.post('/create-booking-order', createBookingOrder);

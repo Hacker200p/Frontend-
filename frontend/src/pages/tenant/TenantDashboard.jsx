@@ -1,18 +1,22 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
 import { LogOut, Menu, X } from 'lucide-react'
 import api, { tenantAPI, canteenAPI, contractAPI } from '../../services/api'
 
 export default function TenantDashboard() {
   const navigate = useNavigate()
+  const location = useLocation()
+  
+  console.log('TenantDashboard mounted - location.state:', location.state)
+  
   const { user, logout } = useAuthStore()
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [activeTab, setActiveTab] = useState('overview')
   const [userInHostel, setUserInHostel] = useState(false)
   const [hostels, setHostels] = useState([])
   const [loading, setLoading] = useState(true)
-  const [selectedHostelId, setSelectedHostelId] = useState(null)
+  const [selectedHostelId, setSelectedHostelId] = useState(location.state?.selectedHostelId || null)
   const [selectedHostel, setSelectedHostel] = useState(null)
   const [hasActiveBooking, setHasActiveBooking] = useState(false)
   const [availableRooms, setAvailableRooms] = useState([])
@@ -151,6 +155,9 @@ export default function TenantDashboard() {
         const hostelsData = hostelsResponse.data?.data || []
         console.log('Available hostels:', hostelsData.length)
         
+        // Store contracts in state
+        setMyContracts(contracts)
+        
         // If user has active contracts, they're in a hostel
         const hasActive = contracts.some(contract => 
           contract.status === 'active' || contract.status === 'pending_signatures' || contract.status === 'draft'
@@ -167,6 +174,11 @@ export default function TenantDashboard() {
         setUserInHostel(hasActive || user?.currentHostel ? true : false)
         setHostels(hostelsData)
         
+        // Also load feedbacks if user has contracts
+        if (contracts.length > 0) {
+          fetchHostelFeedbacks()
+        }
+        
       } catch (error) {
         console.error('Error checking booking status:', error)
         // If API fails, still try to fetch hostels
@@ -178,6 +190,7 @@ export default function TenantDashboard() {
           setHostels([])
         }
         // Reset booking states on error
+        setMyContracts([])
         setMyBooking(null)
         setHasActiveBooking(false)
         setUserInHostel(false)
@@ -199,6 +212,40 @@ export default function TenantDashboard() {
     
     return () => clearInterval(refreshInterval)
   }, [])
+
+  // Handle redirect from landing page
+  useEffect(() => {
+    console.log('Checking for redirect - location.state:', location.state)
+    console.log('Hostels loaded:', hostels.length)
+    
+    if (location.state?.selectedHostelId) {
+      const hostelId = location.state.selectedHostelId
+      console.log('Redirecting to hostel from landing page:', hostelId)
+      
+      if (hostels.length > 0) {
+        // Find and select the hostel
+        const hostel = hostels.find(h => h._id === hostelId)
+        if (hostel) {
+          console.log('Found hostel:', hostel.name)
+          setSelectedHostelId(hostelId)
+          setSelectedHostel(hostel)
+          setActiveTab('overview')
+          
+          // Fetch rooms for this hostel
+          fetchHostelRooms(hostelId)
+          
+          // Clear the navigation state
+          window.history.replaceState({}, document.title)
+        } else {
+          console.log('Hostel not found in list, available hostels:', hostels.map(h => h._id))
+        }
+      } else {
+        console.log('Waiting for hostels to load...')
+      }
+    } else {
+      console.log('No redirect hostel ID in location state')
+    }
+  }, [location.state, hostels])
 
   // Update profile form when user data changes
   useEffect(() => {
@@ -229,6 +276,9 @@ export default function TenantDashboard() {
       fetchMyContracts()
     } else if (activeTab === 'expenses') {
       fetchMyExpenses()
+    } else if (activeTab === 'feedback') {
+      fetchHostelFeedbacks()
+      fetchMyOrders()
     }
   }, [activeTab])
 
@@ -1169,6 +1219,7 @@ export default function TenantDashboard() {
     try {
       setHostelFeedbacksLoading(true)
       const response = await tenantAPI.getMyFeedbacks()
+      console.log('Fetched feedbacks:', response.data?.data)
       setMyHostelFeedbacks(response.data?.data || [])
     } catch (error) {
       console.error('Error fetching hostel feedbacks:', error)
@@ -1198,14 +1249,22 @@ export default function TenantDashboard() {
 
     try {
       setHostelRatingLoading(true)
-      await tenantAPI.submitFeedback({
+      
+      // Check if updating existing rating
+      const existingRating = myHostelFeedbacks.find(f => f.target?._id === activeContract.hostel._id)
+      console.log('Existing rating:', existingRating)
+      console.log('Current feedbacks:', myHostelFeedbacks)
+      
+      const response = await tenantAPI.submitFeedback({
         targetType: 'hostel',
         targetId: activeContract.hostel._id,
         rating: hostelRating,
         comment: hostelReview.trim()
       })
+      
+      console.log('Submit feedback response:', response.data)
 
-      alert('✓ Hostel rating submitted successfully!')
+      alert(existingRating ? '✓ Rating updated successfully!' : '✓ Hostel rating submitted successfully!')
       setShowHostelRatingModal(false)
       setHostelRating(0)
       setHostelReview('')
@@ -1227,7 +1286,6 @@ export default function TenantDashboard() {
     { id: 'contracts', label: 'My Contracts', icon: '📄' },
     { id: 'expenses', label: 'My Expenses', icon: '💰' },
     { id: 'feedback', label: 'Feedback', icon: '⭐' },
-    { id: 'payments', label: 'Payments', icon: '💳' },
     { id: 'settings', label: 'Settings', icon: '⚙️' },
   ]
 
@@ -1669,9 +1727,24 @@ export default function TenantDashboard() {
                     <div className="card">
                       <h3 className="text-xl font-bold mb-4 text-text-dark">Quick Actions</h3>
                       <div className="space-y-3">
-                        <button className="btn-primary w-full text-left py-3">Order Food</button>
-                        <button className="btn-secondary w-full text-left py-3">View Contracts</button>
-                        <button className="btn-secondary w-full text-left py-3">Submit Feedback</button>
+                        <button 
+                          onClick={() => setActiveTab('canteen')}
+                          className="btn-primary w-full text-left py-3"
+                        >
+                          Order Food
+                        </button>
+                        <button 
+                          onClick={() => setActiveTab('contracts')}
+                          className="btn-secondary w-full text-left py-3"
+                        >
+                          View Contracts
+                        </button>
+                        <button 
+                          onClick={() => setActiveTab('feedback')}
+                          className="btn-secondary w-full text-left py-3"
+                        >
+                          Submit Feedback
+                        </button>
                       </div>
                     </div>
 
@@ -2788,219 +2861,180 @@ export default function TenantDashboard() {
 
           {activeTab === 'expenses' && (
             <div className="space-y-6">
+              {/* Payment History Section */}
               <div className="card">
-                <div className="flex items-center justify-between mb-6">
-                  <div>
-                    <h3 className="text-2xl font-bold text-text-dark">💰 My Expenses</h3>
-                    <p className="text-sm text-gray-600 mt-1">Track your monthly expenses and budget</p>
+                <h3 className="text-2xl font-bold text-text-dark mb-6">💳 Payment History</h3>
+                
+                {/* Total Payments Summary */}
+                <div className="grid md:grid-cols-3 gap-4 mb-6">
+                  <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4 border-2 border-purple-200">
+                    <div className="text-purple-600 text-2xl mb-2">🏠</div>
+                    <div className="text-2xl font-bold text-purple-700">
+                      ₹{(myContracts
+                        .filter(c => c.status === 'active' && c.monthlyRent)
+                        .reduce((sum, c) => {
+                          const months = Math.ceil((new Date(c.endDate) - new Date(c.startDate)) / (1000 * 60 * 60 * 24 * 30))
+                          return sum + (c.monthlyRent * Math.max(1, months))
+                        }, 0) || 0
+                      ).toLocaleString()}
+                    </div>
+                    <div className="text-xs text-purple-600 font-medium">Rent Payments</div>
                   </div>
-                  <button
-                    onClick={handleAddExpense}
-                    className="btn-primary"
-                  >
-                    ➕ Add Expense
-                  </button>
+                  
+                  <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-4 border-2 border-orange-200">
+                    <div className="text-orange-600 text-2xl mb-2">🍽️</div>
+                    <div className="text-2xl font-bold text-orange-700">
+                      ₹{(myOrders
+                        .filter(o => o.orderStatus === 'delivered' || o.orderStatus === 'paid')
+                        .reduce((sum, o) => sum + (o.totalAmount || 0), 0) || 0
+                      ).toLocaleString()}
+                    </div>
+                    <div className="text-xs text-orange-600 font-medium">Canteen Orders</div>
+                  </div>
+                  
+                  <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4 border-2 border-green-200">
+                    <div className="text-green-600 text-2xl mb-2">🍱</div>
+                    <div className="text-2xl font-bold text-green-700">
+                      ₹{(mySubscriptions
+                        .filter(s => s.status === 'active' || s.status === 'expired')
+                        .reduce((sum, s) => {
+                          const months = Math.ceil((new Date(s.endDate) - new Date(s.startDate)) / (1000 * 60 * 60 * 24 * 30))
+                          return sum + (s.price * Math.max(1, months))
+                        }, 0) || 0
+                      ).toLocaleString()}
+                    </div>
+                    <div className="text-xs text-green-600 font-medium">Subscriptions</div>
+                  </div>
                 </div>
 
-                {/* Year Filter */}
-                <div className="flex gap-2 mb-6">
-                  {[2025, 2024, 2023].map(year => (
-                    <button
-                      key={year}
-                      onClick={() => {
-                        setSelectedYear(year)
-                        fetchMyExpenses(year)
-                      }}
-                      className={`px-4 py-2 rounded-lg font-semibold transition ${
-                        selectedYear === year
-                          ? 'bg-primary text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      {year}
-                    </button>
-                  ))}
-                </div>
-
-                {expensesLoading ? (
-                  <div className="text-center py-12">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
-                    <p className="text-text-muted mt-4">Loading expenses...</p>
-                  </div>
-                ) : myExpenses.length === 0 ? (
-                  <div className="text-center py-12">
-                    <div className="text-6xl mb-4">📊</div>
-                    <p className="text-text-muted text-lg mb-4">No expenses recorded for {selectedYear}</p>
-                    <button onClick={handleAddExpense} className="btn-primary">
-                      Add Your First Expense
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {/* Summary Cards */}
-                    <div className="grid md:grid-cols-4 gap-4 mb-6">
-                      <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4 border-2 border-blue-200">
-                        <div className="text-blue-600 text-2xl mb-2">💵</div>
-                        <div className="text-2xl font-bold text-blue-700">
-                          ₹{myExpenses.reduce((sum, e) => sum + (e.totalExpense || 0), 0).toLocaleString()}
-                        </div>
-                        <div className="text-xs text-blue-600 font-medium">Total Expenses</div>
+                {/* Detailed Payment Records */}
+                <div className="space-y-4">
+                  <h4 className="text-lg font-semibold text-text-dark">Recent Transactions</h4>
+                  
+                  {/* Rent Payments */}
+                  {myContracts.filter(c => c.status === 'active' && c.monthlyRent).length > 0 && (
+                    <div className="border-2 border-purple-200 rounded-xl overflow-hidden">
+                      <div className="bg-purple-50 px-4 py-3 border-b border-purple-200">
+                        <h5 className="font-bold text-purple-900 flex items-center gap-2">
+                          <span>🏠</span> Rent Payments
+                        </h5>
                       </div>
-                      <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-4 border-2 border-green-200">
-                        <div className="text-green-600 text-2xl mb-2">📅</div>
-                        <div className="text-2xl font-bold text-green-700">
-                          {myExpenses.length}
-                        </div>
-                        <div className="text-xs text-green-600 font-medium">Months Recorded</div>
-                      </div>
-                      <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-4 border-2 border-purple-200">
-                        <div className="text-purple-600 text-2xl mb-2">📊</div>
-                        <div className="text-2xl font-bold text-purple-700">
-                          ₹{Math.round(myExpenses.reduce((sum, e) => sum + (e.totalExpense || 0), 0) / myExpenses.length).toLocaleString()}
-                        </div>
-                        <div className="text-xs text-purple-600 font-medium">Avg Per Month</div>
-                      </div>
-                      <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl p-4 border-2 border-orange-200">
-                        <div className="text-orange-600 text-2xl mb-2">🏠</div>
-                        <div className="text-2xl font-bold text-orange-700">
-                          ₹{Math.round(myExpenses.reduce((sum, e) => sum + (e.rent || 0), 0) / myExpenses.length).toLocaleString()}
-                        </div>
-                        <div className="text-xs text-orange-600 font-medium">Avg Rent</div>
+                      <div className="divide-y">
+                        {myContracts
+                          .filter(c => c.status === 'active' && c.monthlyRent)
+                          .map(contract => (
+                            <div key={contract._id} className="p-4 hover:bg-gray-50 transition">
+                              <div className="flex items-center justify-between">
+                                <div className="flex-1">
+                                  <p className="font-semibold text-text-dark">{contract.hostel?.name}</p>
+                                  <p className="text-sm text-text-muted">
+                                    Room {contract.room?.roomNumber} • {new Date(contract.startDate).toLocaleDateString()} - {new Date(contract.endDate).toLocaleDateString()}
+                                  </p>
+                                  <p className="text-xs text-green-600 font-medium mt-1">✓ Active Contract</p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="font-bold text-purple-700 text-lg">₹{contract.monthlyRent}/month</p>
+                                  <p className="text-xs text-text-muted">+ ₹{contract.securityDeposit} deposit</p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
                       </div>
                     </div>
+                  )}
 
-                    {/* Monthly Expenses */}
-                    {myExpenses.map(expense => (
-                      <div key={expense._id} className="border-2 border-gray-200 rounded-xl overflow-hidden bg-white">
-                        <div className="bg-gradient-to-r from-primary to-blue-600 text-white p-4">
-                          <div className="flex items-center justify-between">
-                            <div className="flex-1">
-                              <h4 className="font-bold text-xl">
-                                {new Date(expense.year, expense.month - 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-                              </h4>
-                              <p className="text-sm opacity-90">Monthly Expense Report</p>
-                            </div>
-                            <div className="text-right mr-4">
-                              <p className="text-3xl font-bold">₹{expense.totalExpense.toLocaleString()}</p>
-                              <p className="text-xs opacity-90">Total</p>
-                            </div>
-                            <div className="flex flex-col gap-2">
-                              <button
-                                onClick={() => handleEditExpense(expense)}
-                                className="bg-white text-primary px-3 py-1 rounded-lg hover:bg-blue-50 transition font-semibold text-sm"
-                              >
-                                ✏️ Edit
-                              </button>
-                              <button
-                                onClick={() => handleDeleteExpense(expense._id)}
-                                className="bg-red-500 text-white px-3 py-1 rounded-lg hover:bg-red-600 transition font-semibold text-sm"
-                              >
-                                🗑️ Delete
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="p-6">
-                          <div className="grid md:grid-cols-3 gap-4">
-                            {/* Rent */}
-                            <div className="bg-orange-50 rounded-lg p-4 border border-orange-200">
-                              <div className="flex items-center gap-3">
-                                <div className="text-3xl">🏠</div>
-                                <div className="flex-1">
-                                  <p className="text-xs text-gray-600">Rent</p>
-                                  <p className="text-2xl font-bold text-orange-700">₹{expense.rent}</p>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Electricity */}
-                            <div className="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
-                              <div className="flex items-center gap-3">
-                                <div className="text-3xl">⚡</div>
-                                <div className="flex-1">
-                                  <p className="text-xs text-gray-600">Electricity</p>
-                                  <p className="text-2xl font-bold text-yellow-700">₹{expense.electricity}</p>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Water */}
-                            <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                              <div className="flex items-center gap-3">
-                                <div className="text-3xl">💧</div>
-                                <div className="flex-1">
-                                  <p className="text-xs text-gray-600">Water</p>
-                                  <p className="text-2xl font-bold text-blue-700">₹{expense.water}</p>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Food */}
-                            <div className="bg-green-50 rounded-lg p-4 border border-green-200">
-                              <div className="flex items-center gap-3">
-                                <div className="text-3xl">🍽️</div>
-                                <div className="flex-1">
-                                  <p className="text-xs text-gray-600">Food</p>
-                                  <p className="text-2xl font-bold text-green-700">₹{expense.food}</p>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Maintenance */}
-                            <div className="bg-purple-50 rounded-lg p-4 border border-purple-200">
-                              <div className="flex items-center gap-3">
-                                <div className="text-3xl">🔧</div>
-                                <div className="flex-1">
-                                  <p className="text-xs text-gray-600">Maintenance</p>
-                                  <p className="text-2xl font-bold text-purple-700">₹{expense.maintenance}</p>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Other Expenses */}
-                            {expense.other && expense.other.length > 0 && (
-                              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                                <div className="flex items-center gap-3">
-                                  <div className="text-3xl">📝</div>
-                                  <div className="flex-1">
-                                    <p className="text-xs text-gray-600">Other</p>
-                                    <p className="text-2xl font-bold text-gray-700">
-                                      ₹{expense.other.reduce((sum, item) => sum + item.amount, 0)}
-                                    </p>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Other Expenses Details */}
-                          {expense.other && expense.other.length > 0 && (
-                            <div className="mt-4 pt-4 border-t">
-                              <h5 className="font-semibold text-gray-700 mb-2">Other Expenses:</h5>
-                              <div className="space-y-1">
-                                {expense.other.map((item, idx) => (
-                                  <div key={idx} className="flex justify-between text-sm">
-                                    <span className="text-gray-600">{item.description}</span>
-                                    <span className="font-semibold text-gray-800">₹{item.amount}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Notes */}
-                          {expense.notes && (
-                            <div className="mt-4 pt-4 border-t">
-                              <h5 className="font-semibold text-gray-700 mb-2">📝 Notes:</h5>
-                              <p className="text-sm text-gray-600 italic">{expense.notes}</p>
-                            </div>
-                          )}
-                        </div>
+                  {/* Canteen Orders */}
+                  {myOrders.filter(o => o.orderStatus === 'delivered' || o.orderStatus === 'paid').length > 0 && (
+                    <div className="border-2 border-orange-200 rounded-xl overflow-hidden">
+                      <div className="bg-orange-50 px-4 py-3 border-b border-orange-200">
+                        <h5 className="font-bold text-orange-900 flex items-center gap-2">
+                          <span>🍽️</span> Canteen Orders ({myOrders.filter(o => o.orderStatus === 'delivered' || o.orderStatus === 'paid').length})
+                        </h5>
                       </div>
-                    ))}
-                  </div>
-                )}
+                      <div className="max-h-96 overflow-y-auto divide-y">
+                        {myOrders
+                          .filter(o => o.orderStatus === 'delivered' || o.orderStatus === 'paid')
+                          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+                          .map(order => (
+                            <div key={order._id} className="p-4 hover:bg-gray-50 transition">
+                              <div className="flex items-center justify-between">
+                                <div className="flex-1">
+                                  <p className="font-semibold text-text-dark">Order #{order.orderNumber}</p>
+                                  <p className="text-sm text-text-muted">{order.canteen?.name}</p>
+                                  <p className="text-xs text-text-muted mt-1">
+                                    {new Date(order.createdAt).toLocaleDateString('en-IN', { 
+                                      day: 'numeric', 
+                                      month: 'short', 
+                                      year: 'numeric',
+                                      hour: '2-digit',
+                                      minute: '2-digit'
+                                    })}
+                                  </p>
+                                  <div className="text-xs text-gray-600 mt-1">
+                                    {order.items?.slice(0, 2).map(item => item.name).join(', ')}
+                                    {order.items?.length > 2 && ` +${order.items.length - 2} more`}
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <p className="font-bold text-orange-700 text-lg">₹{order.totalAmount}</p>
+                                  <span className="inline-block px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-medium">
+                                    {order.orderStatus === 'delivered' ? '✓ Delivered' : '✓ Paid'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Subscriptions */}
+                  {mySubscriptions.filter(s => s.status === 'active' || s.status === 'expired').length > 0 && (
+                    <div className="border-2 border-green-200 rounded-xl overflow-hidden">
+                      <div className="bg-green-50 px-4 py-3 border-b border-green-200">
+                        <h5 className="font-bold text-green-900 flex items-center gap-2">
+                          <span>🍱</span> Meal Subscriptions
+                        </h5>
+                      </div>
+                      <div className="divide-y">
+                        {mySubscriptions
+                          .filter(s => s.status === 'active' || s.status === 'expired')
+                          .map(sub => (
+                            <div key={sub._id} className="p-4 hover:bg-gray-50 transition">
+                              <div className="flex items-center justify-between">
+                                <div className="flex-1">
+                                  <p className="font-semibold text-text-dark">{sub.canteen?.name}</p>
+                                  <p className="text-sm text-text-muted capitalize">{sub.plan.replace('_', ' ')} Plan • {sub.foodType.replace('_', ' ')}</p>
+                                  <p className="text-xs text-text-muted mt-1">
+                                    {new Date(sub.startDate).toLocaleDateString()} - {new Date(sub.endDate).toLocaleDateString()}
+                                  </p>
+                                </div>
+                                <div className="text-right">
+                                  <p className="font-bold text-green-700 text-lg">₹{sub.price}/month</p>
+                                  <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${
+                                    sub.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+                                  }`}>
+                                    {sub.status === 'active' ? '✓ Active' : '○ Expired'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* No payments message */}
+                  {myContracts.filter(c => c.status === 'active').length === 0 && 
+                   myOrders.filter(o => o.orderStatus === 'delivered' || o.orderStatus === 'paid').length === 0 &&
+                   mySubscriptions.filter(s => s.status === 'active' || s.status === 'expired').length === 0 && (
+                    <div className="text-center py-12">
+                      <div className="text-6xl mb-4">💳</div>
+                      <p className="text-text-muted text-lg">No payment history available</p>
+                      <p className="text-sm text-gray-500 mt-2">Your transactions will appear here once you make bookings or orders</p>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -3011,15 +3045,29 @@ export default function TenantDashboard() {
               <div className="card bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200">
                 <div className="flex items-center justify-between mb-4">
                   <div>
-                    <h3 className="text-2xl font-bold text-text-dark">🏠 Rate Your Hostel</h3>
-                    <p className="text-sm text-gray-600 mt-1">Share your experience about your current hostel</p>
+                    <h3 className="text-2xl font-bold text-text-dark">🏠 Your Hostel Ratings</h3>
+                    <p className="text-sm text-gray-600 mt-1">Share and update your hostel experience</p>
                   </div>
                   {myContracts.find(c => c.status === 'active') && (
                     <button
-                      onClick={() => setShowHostelRatingModal(true)}
+                      onClick={() => {
+                        // Pre-fill form if there's an existing rating for current hostel
+                        const activeContract = myContracts.find(c => c.status === 'active')
+                        const existingRating = myHostelFeedbacks.find(f => f.target?._id === activeContract?.hostel?._id)
+                        if (existingRating) {
+                          setHostelRating(existingRating.rating)
+                          setHostelReview(existingRating.comment)
+                        } else {
+                          setHostelRating(0)
+                          setHostelReview('')
+                        }
+                        setShowHostelRatingModal(true)
+                      }}
                       className="btn-primary"
                     >
-                      ⭐ Rate Hostel
+                      {myHostelFeedbacks.find(f => f.target?._id === myContracts.find(c => c.status === 'active')?.hostel?._id) 
+                        ? '✏️ Update Rating' 
+                        : '⭐ Rate Hostel'}
                     </button>
                   )}
                 </div>
@@ -3032,14 +3080,83 @@ export default function TenantDashboard() {
                 )}
 
                 {myContracts.find(c => c.status === 'active') && (
-                  <div className="bg-white rounded-lg p-4 border border-blue-200">
-                    <h4 className="font-bold text-lg mb-2">
-                      {myContracts.find(c => c.status === 'active').hostel?.name}
-                    </h4>
-                    <p className="text-sm text-gray-600">
-                      📍 {myContracts.find(c => c.status === 'active').hostel?.address?.city}, 
-                      {myContracts.find(c => c.status === 'active').hostel?.address?.state}
-                    </p>
+                  <div>
+                    <div className="bg-white rounded-lg p-4 border border-blue-200 mb-4">
+                      <h4 className="font-bold text-lg mb-2">
+                        {myContracts.find(c => c.status === 'active').hostel?.name}
+                      </h4>
+                      <p className="text-sm text-gray-600">
+                        📍 {myContracts.find(c => c.status === 'active').hostel?.address?.city}, 
+                        {myContracts.find(c => c.status === 'active').hostel?.address?.state}
+                      </p>
+                    </div>
+
+                    {/* Show existing rating for current hostel */}
+                    {(() => {
+                      const activeContract = myContracts.find(c => c.status === 'active')
+                      const hostelId = activeContract?.hostel?._id?.toString()
+                      const existingRating = myHostelFeedbacks.find(f => {
+                        const targetId = f.target?._id?.toString()
+                        return targetId === hostelId
+                      })
+                      
+                      console.log('Active Contract Hostel ID:', hostelId)
+                      console.log('My Hostel Feedbacks:', myHostelFeedbacks)
+                      console.log('Found Existing Rating:', existingRating)
+                      
+                      if (existingRating) {
+                        return (
+                          <div key={existingRating._id} className="bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg p-5 border-2 border-yellow-200">
+                            <div className="flex items-start justify-between mb-3">
+                              <div className="flex items-center gap-3">
+                                <span className="text-3xl">⭐</span>
+                                <div>
+                                  <h5 className="font-bold text-lg text-yellow-900">Your Current Rating</h5>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <div className="flex gap-1">
+                                      {[...Array(5)].map((_, i) => (
+                                        <span key={i} className={i < existingRating.rating ? 'text-yellow-500 text-xl' : 'text-gray-300 text-xl'}>
+                                          ★
+                                        </span>
+                                      ))}
+                                    </div>
+                                    <span className="text-yellow-900 font-bold">({existingRating.rating}/5)</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setHostelRating(existingRating.rating)
+                                  setHostelReview(existingRating.comment)
+                                  setShowHostelRatingModal(true)
+                                }}
+                                className="text-sm px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-semibold"
+                              >
+                                ✏️ Edit
+                              </button>
+                            </div>
+                            <div className="bg-white rounded-lg p-3 mt-3">
+                              <p className="text-sm text-gray-700 italic">"{existingRating.comment}"</p>
+                            </div>
+                            <p className="text-xs text-gray-600 mt-3">
+                              📅 {existingRating.updatedAt ? 'Last updated' : 'Submitted'} on {new Date(existingRating.updatedAt || existingRating.createdAt).toLocaleDateString('en-IN', {
+                                day: 'numeric',
+                                month: 'long',
+                                year: 'numeric'
+                              })}
+                            </p>
+                          </div>
+                        )
+                      } else {
+                        return (
+                          <div className="bg-white rounded-lg p-6 border-2 border-dashed border-gray-300 text-center">
+                            <div className="text-5xl mb-3">⭐</div>
+                            <p className="text-gray-600 mb-2">You haven't rated this hostel yet</p>
+                            <p className="text-sm text-gray-500">Share your experience to help other tenants</p>
+                          </div>
+                        )
+                      }
+                    })()}
                   </div>
                 )}
               </div>
@@ -3225,13 +3342,6 @@ export default function TenantDashboard() {
                   </div>
                 </div>
               )}
-            </div>
-          )}
-
-          {activeTab === 'payments' && (
-            <div className="card">
-              <h3 className="text-2xl font-bold mb-4 text-text-dark">Payments</h3>
-              <p className="text-text-muted">Coming soon...</p>
             </div>
           )}
 
@@ -4359,7 +4469,13 @@ export default function TenantDashboard() {
             <div className="sticky top-0 bg-gradient-to-r from-blue-500 to-indigo-500 text-white p-6 rounded-t-2xl">
               <div className="flex justify-between items-center">
                 <div>
-                  <h2 className="text-2xl font-bold">🏠 Rate Your Hostel</h2>
+                  <h2 className="text-2xl font-bold">
+                    {(() => {
+                      const activeContract = myContracts.find(c => c.status === 'active')
+                      const existingRating = myHostelFeedbacks.find(f => f.target?._id === activeContract?.hostel?._id)
+                      return existingRating ? '✏️ Update Your Rating' : '🏠 Rate Your Hostel'
+                    })()}
+                  </h2>
                   <p className="text-sm text-white/90 mt-1">
                     {myContracts.find(c => c.status === 'active').hostel?.name}
                   </p>
@@ -4448,7 +4564,15 @@ export default function TenantDashboard() {
                   disabled={hostelRatingLoading || hostelRating === 0 || !hostelReview.trim()}
                   className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-500 text-white px-6 py-3 rounded-lg hover:from-blue-600 hover:to-indigo-600 transition-all font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {hostelRatingLoading ? 'Submitting...' : '✓ Submit Rating'}
+                  {hostelRatingLoading ? (
+                    myHostelFeedbacks.find(f => f.target?._id === myContracts.find(c => c.status === 'active')?.hostel?._id) 
+                      ? 'Updating...' 
+                      : 'Submitting...'
+                  ) : (
+                    myHostelFeedbacks.find(f => f.target?._id === myContracts.find(c => c.status === 'active')?.hostel?._id) 
+                      ? '✓ Update Rating' 
+                      : '✓ Submit Rating'
+                  )}
                 </button>
               </div>
             </div>
