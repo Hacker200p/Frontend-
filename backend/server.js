@@ -46,13 +46,24 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.',
-});
-app.use('/api/', limiter);
+// Rate limiting (tunable via env vars and disabled in development)
+const RATE_LIMIT_WINDOW_MS = parseInt(process.env.RATE_LIMIT_WINDOW_MS || (15 * 60 * 1000), 10);
+const RATE_LIMIT_MAX = parseInt(process.env.RATE_LIMIT_MAX || (process.env.NODE_ENV === 'production' ? 600 : 1200), 10);
+const RATE_LIMIT_ENABLED = (process.env.RATE_LIMIT_ENABLED || (process.env.NODE_ENV === 'production' ? 'true' : 'false')).toLowerCase() === 'true';
+
+if (RATE_LIMIT_ENABLED) {
+  const limiter = rateLimit({
+    windowMs: RATE_LIMIT_WINDOW_MS,
+    max: RATE_LIMIT_MAX,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: 'Too many requests from this IP, please try again later.',
+  });
+  app.use('/api/', limiter);
+  console.log(`Rate limiting enabled: max ${RATE_LIMIT_MAX} reqs / ${RATE_LIMIT_WINDOW_MS / 60000} min`);
+} else {
+  console.log('Rate limiting disabled for this environment.');
+}
 
 // Socket.IO - Real-time order tracking
 io.on('connection', (socket) => {
