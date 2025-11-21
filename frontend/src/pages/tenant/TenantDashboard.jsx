@@ -1,9 +1,73 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
 import { LogOut, Menu, X } from 'lucide-react'
 import api, { tenantAPI, canteenAPI, contractAPI } from '../../services/api'
 
+const WEEK_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+
+const normalizeObjectId = (value) => {
+  if (!value) return ''
+  if (typeof value === 'string') return value
+  if (typeof value === 'object' && typeof value.toString === 'function') {
+    return value.toString()
+  }
+  return String(value)
+}
+
+const findHostelFeedback = (feedbacks, hostelId) => {
+  const normalizedHostelId = normalizeObjectId(hostelId)
+  if (!normalizedHostelId) return null
+  return feedbacks.find((feedback) => {
+    const targetId = feedback?.target?._id || feedback?.targetId
+    return normalizeObjectId(targetId) === normalizedHostelId
+  }) || null
+}
+
+const normalizeWeeklyMenu = (menu = {}) =>
+  WEEK_DAYS.reduce((acc, day) => {
+    acc[day] = menu?.[day] || ''
+    return acc
+  }, {})
+
+const createPlanWithMenu = (plan = {}) => ({
+  enabled: Boolean(plan?.enabled),
+  pure_veg: Number(plan?.pure_veg) || 0,
+  veg: Number(plan?.veg) || 0,
+  non_veg_mix: Number(plan?.non_veg_mix) || 0,
+  weeklyMenu: normalizeWeeklyMenu(plan?.weeklyMenu || {})
+})
+
+const createSimplePlan = (plan = {}) => ({
+  enabled: Boolean(plan?.enabled),
+  pure_veg: Number(plan?.pure_veg) || 0,
+  veg: Number(plan?.veg) || 0,
+  non_veg_mix: Number(plan?.non_veg_mix) || 0
+})
+
+const normalizeSubscriptionPlans = (plans = {}) => {
+  const normalized = {
+    breakfast: createPlanWithMenu(plans?.breakfast),
+    lunch: createPlanWithMenu(plans?.lunch),
+    dinner: createPlanWithMenu(plans?.dinner),
+    breakfast_lunch: createSimplePlan(plans?.breakfast_lunch),
+    lunch_dinner: createSimplePlan(plans?.lunch_dinner),
+    all_meals: createSimplePlan(plans?.all_meals)
+  }
+
+  return normalized
+}
+
+const enrichCanteenWithPlans = (canteen) => {
+  if (!canteen) return null
+  return {
+    ...canteen,
+    subscriptionPlans: normalizeSubscriptionPlans(canteen.subscriptionPlans || {})
+  }
+}
+
+const DEFAULT_FETCH_COOLDOWN = 30000
+const LONG_FETCH_COOLDOWN = 60000
 export default function TenantDashboard() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -54,6 +118,7 @@ export default function TenantDashboard() {
   const [selectedPlan, setSelectedPlan] = useState(null)
   const [selectedFoodType, setSelectedFoodType] = useState('pure_veg')
   const [subscriptionLoading, setSubscriptionLoading] = useState(false)
+  const [expandedSubscriptionPlan, setExpandedSubscriptionPlan] = useState(null)
   
   // Contracts state
   const [myContracts, setMyContracts] = useState([])
@@ -141,6 +206,21 @@ export default function TenantDashboard() {
     setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000)
   }
 
+  const fetchTimestampsRef = useRef({})
+  const canRunFetch = (key, cooldown = DEFAULT_FETCH_COOLDOWN, force = false) => {
+    if (force) {
+      fetchTimestampsRef.current[key] = Date.now()
+      return true
+    }
+    const now = Date.now()
+    const lastTimestamp = fetchTimestampsRef.current[key] || 0
+    if (now - lastTimestamp < cooldown) {
+      return false
+    }
+    fetchTimestampsRef.current[key] = now
+    return true
+  }
+
   // Video modal state
   const [showVideoModal, setShowVideoModal] = useState(false)
   const [currentVideoUrl, setCurrentVideoUrl] = useState('')
@@ -220,10 +300,10 @@ export default function TenantDashboard() {
     
     loadData()
     
-    // Set up auto-refresh every 30 seconds to check for contract updates
+    // Set up auto-refresh every 60 seconds to check for contract updates
     const refreshInterval = setInterval(() => {
       checkUserBookingStatus()
-    }, 30000) // 30 seconds
+    }, 60000)
     
     return () => clearInterval(refreshInterval)
   }, [])
@@ -281,10 +361,10 @@ export default function TenantDashboard() {
       fetchMySubscriptions()
       fetchMyOrders()
       
-      // Auto-refresh orders every 30 seconds when on canteen tab
+      // Auto-refresh orders every 60 seconds when on canteen tab
       const interval = setInterval(() => {
         fetchMyOrders()
-      }, 30000)
+      }, 60000)
       
       return () => clearInterval(interval)
     } else if (activeTab === 'contracts') {
@@ -545,16 +625,30 @@ export default function TenantDashboard() {
     return address
   }
 
-  const fetchAvailableCanteens = async () => {
+  const fetchAvailableCanteens = async ({ force = false } = {}) => {
+    if (!canRunFetch('availableCanteens', LONG_FETCH_COOLDOWN, force)) {
+      return
+    }
     setCanteensLoading(true)
     setCanteenError(null)
     try {
       console.log('Fetching available canteens...')
       const response = await canteenAPI.getAvailableCanteens()
       console.log('Canteens response:', response.data)
-      setAvailableCanteens(response.data?.data || [])
+      const canteenData = response.data?.data || []
+      const normalizedCanteens = canteenData.map(enrichCanteenWithPlans)
+      setAvailableCanteens(normalizedCanteens)
+
+      if (selectedCanteen) {
+        const updatedSelection = normalizedCanteens.find(
+          (canteen) => normalizeObjectId(canteen?._id) === normalizeObjectId(selectedCanteen?._id)
+        )
+        if (updatedSelection) {
+          setSelectedCanteen(updatedSelection)
+        }
+      }
       
-      if (!response.data?.data || response.data.data.length === 0) {
+      if (!canteenData.length) {
         const msg = response.data?.message || 'No canteens found. Make sure you have an active room booking.'
         setCanteenError(msg)
       }
@@ -576,7 +670,10 @@ export default function TenantDashboard() {
     }
   }
 
-  const fetchMySubscriptions = async () => {
+  const fetchMySubscriptions = async ({ force = false } = {}) => {
+    if (!canRunFetch('mySubscriptions', LONG_FETCH_COOLDOWN, force)) {
+      return
+    }
     try {
       const response = await canteenAPI.getMySubscriptions()
       setMySubscriptions(response.data?.data || [])
@@ -585,7 +682,10 @@ export default function TenantDashboard() {
     }
   }
 
-  const fetchMyContracts = async () => {
+  const fetchMyContracts = async ({ force = false } = {}) => {
+    if (!canRunFetch('myContracts', LONG_FETCH_COOLDOWN, force)) {
+      return
+    }
     setContractsLoading(true)
     try {
       const response = await tenantAPI.getMyContracts()
@@ -1002,7 +1102,7 @@ export default function TenantDashboard() {
               setShowSubscriptionModal(false)
               setSelectedPlan(null)
               setSelectedFoodType('pure_veg')
-              await fetchMySubscriptions()
+              await fetchMySubscriptions({ force: true })
             } else {
               throw new Error(verifyResponse.data?.message || 'Payment verification failed')
             }
@@ -1082,7 +1182,10 @@ export default function TenantDashboard() {
     return { itemsTotal, deliveryCharge, total: itemsTotal + deliveryCharge }
   }
 
-  const fetchMyOrders = async () => {
+  const fetchMyOrders = async ({ force = false } = {}) => {
+    if (!canRunFetch('myOrders', DEFAULT_FETCH_COOLDOWN, force)) {
+      return
+    }
     setOrdersLoading(true)
     try {
       const response = await canteenAPI.getMyOrders()
@@ -1149,7 +1252,7 @@ export default function TenantDashboard() {
               showToast('Order placed successfully! Your food will be delivered soon.', 'success')
               setCart([])
               setShowCartModal(false)
-              await fetchMyOrders()
+              await fetchMyOrders({ force: true })
             } else {
               throw new Error(verifyResponse.data?.message || 'Payment verification failed')
             }
@@ -1220,7 +1323,7 @@ export default function TenantDashboard() {
       setFeedbackComment('')
       
       // Refresh orders to update feedback status
-      await fetchMyOrders()
+      await fetchMyOrders({ force: true })
     } catch (error) {
       console.error('Error submitting feedback:', error)
       alert('Failed to submit feedback: ' + (error.response?.data?.message || error.message))
@@ -1230,22 +1333,24 @@ export default function TenantDashboard() {
   }
 
   // Fetch hostel feedbacks
-  const fetchHostelFeedbacks = async () => {
+  const fetchHostelFeedbacks = async ({ force = false } = {}) => {
+    if (!canRunFetch('hostelFeedbacks', LONG_FETCH_COOLDOWN, force)) {
+      return myHostelFeedbacks
+    }
+    setHostelFeedbacksLoading(true)
     try {
-      setHostelFeedbacksLoading(true)
       const response = await tenantAPI.getMyFeedbacks()
       console.log('Fetched feedbacks response:', response.data)
       const feedbacks = response.data?.data || []
       console.log('Setting feedbacks:', feedbacks)
       setMyHostelFeedbacks(feedbacks)
       console.log('Feedbacks state updated')
-      // Force a re-render by updating a dummy state
-      setHostelFeedbacksLoading(false)
       return feedbacks
     } catch (error) {
       console.error('Error fetching hostel feedbacks:', error)
-      setHostelFeedbacksLoading(false)
       return []
+    } finally {
+      setHostelFeedbacksLoading(false)
     }
   }
 
@@ -1272,9 +1377,11 @@ export default function TenantDashboard() {
       setHostelRatingLoading(true)
       
       // Check if updating existing rating
-      const existingRating = myHostelFeedbacks.find(f => f.target?._id === activeContract.hostel._id)
+      const existingRating = findHostelFeedback(myHostelFeedbacks, activeContract.hostel?._id)
+      console.log('📝 Submitting feedback...')
       console.log('Existing rating:', existingRating)
-      console.log('Current feedbacks:', myHostelFeedbacks)
+      console.log('New rating:', hostelRating)
+      console.log('New review:', hostelReview)
       
       const response = await tenantAPI.submitFeedback({
         targetType: 'hostel',
@@ -1283,27 +1390,52 @@ export default function TenantDashboard() {
         comment: hostelReview.trim()
       })
       
-      console.log('Submit feedback response:', response.data)
+      console.log('✅ Submit feedback response:', response.data)
 
-      // Wait a moment to ensure backend has saved
-      await new Promise(resolve => setTimeout(resolve, 300))
+      // Clear the fetch cooldown to allow immediate refresh
+      fetchTimestampsRef.current['hostelFeedbacks'] = 0
       
-      // Refresh feedbacks to get the updated data
-      console.log('Fetching updated feedbacks...')
-      const updatedFeedbacks = await fetchHostelFeedbacks()
-      console.log('Updated feedbacks received:', updatedFeedbacks)
+      // Wait for backend to process
+      await new Promise(resolve => setTimeout(resolve, 500))
       
-      // Force re-render
-      setFeedbackUpdateTrigger(prev => prev + 1)
+      // Refresh feedbacks multiple times to ensure update
+      console.log('🔄 Fetching updated feedbacks (attempt 1)...')
+      let updatedFeedbacks = await fetchHostelFeedbacks({ force: true })
       
-      // Close modal after data is refreshed
-      setShowHostelRatingModal(false)
-      setHostelRating(0)
-      setHostelReview('')
+      // If feedback not found, try again
+      if (!findHostelFeedback(updatedFeedbacks, activeContract.hostel._id)) {
+        console.log('⏳ Feedback not found, retrying...')
+        await new Promise(resolve => setTimeout(resolve, 500))
+        console.log('🔄 Fetching updated feedbacks (attempt 2)...')
+        updatedFeedbacks = await fetchHostelFeedbacks({ force: true })
+      }
       
-      showToast(existingRating ? 'Rating updated successfully!' : 'Hostel rating submitted successfully!', 'success')
+      console.log('📋 Updated feedbacks received:', updatedFeedbacks)
+      
+      // Update state directly to force immediate re-render
+      const newFeedback = findHostelFeedback(updatedFeedbacks, activeContract.hostel._id)
+      if (newFeedback) {
+        console.log('✨ Found updated feedback:', newFeedback)
+        // Force state update
+        setMyHostelFeedbacks([...updatedFeedbacks])
+      }
+      
+      // Force re-render with timestamp
+      setFeedbackUpdateTrigger(Date.now())
+      
+      // Show success message
+      showToast(existingRating ? '✓ Rating updated successfully!' : '✓ Hostel rating submitted successfully!', 'success')
+      
+      // Close modal after a brief moment
+      setTimeout(() => {
+        setShowHostelRatingModal(false)
+        setHostelRating(0)
+        setHostelReview('')
+      }, 500)
+      
     } catch (error) {
-      console.error('Error submitting hostel rating:', error)
+      console.error('❌ Error submitting hostel rating:', error)
+      console.error('Error details:', error.response?.data)
       showToast('Failed to submit rating: ' + (error.response?.data?.message || error.message), 'error')
     } finally {
       setHostelRatingLoading(false)
@@ -2401,8 +2533,8 @@ export default function TenantDashboard() {
                   </div>
                   <button
                     onClick={() => {
-                      fetchAvailableCanteens()
-                      fetchMySubscriptions()
+                      fetchAvailableCanteens({ force: true })
+                      fetchMySubscriptions({ force: true })
                     }}
                     className="mt-4 btn-secondary"
                   >
@@ -2416,7 +2548,7 @@ export default function TenantDashboard() {
                 <div className="flex items-center justify-between mb-6">
                   <h3 className="text-2xl font-bold text-text-dark">🍽️ Available Canteens</h3>
                   <button
-                    onClick={fetchAvailableCanteens}
+                    onClick={() => fetchAvailableCanteens({ force: true })}
                     className="btn-secondary"
                   >
                     🔄 Refresh
@@ -2435,7 +2567,7 @@ export default function TenantDashboard() {
                     <p className="text-text-muted text-sm mb-4">
                       {!hasActiveBooking && 'Please book a room first to see available canteens.'}
                     </p>
-                    <button onClick={fetchAvailableCanteens} className="btn-primary">
+                    <button onClick={() => fetchAvailableCanteens({ force: true })} className="btn-primary">
                       🔄 Retry
                     </button>
                   </div>
@@ -2446,7 +2578,7 @@ export default function TenantDashboard() {
                     {!hasActiveBooking && (
                       <p className="text-yellow-600 text-sm mb-4">⚠️ You need an active room booking to view canteens</p>
                     )}
-                    <button onClick={fetchAvailableCanteens} className="btn-primary" disabled={canteensLoading}>
+                    <button onClick={() => fetchAvailableCanteens({ force: true })} className="btn-primary" disabled={canteensLoading}>
                       {canteensLoading ? 'Loading...' : 'Load Canteens'}
                     </button>
                   </div>
@@ -2455,7 +2587,8 @@ export default function TenantDashboard() {
                     {availableCanteens.map(canteen => (
                       <div key={canteen._id} className="border-2 border-gray-200 rounded-xl p-4 hover:border-primary transition cursor-pointer"
                         onClick={() => {
-                          setSelectedCanteen(canteen)
+                          const normalizedSelection = enrichCanteenWithPlans(canteen)
+                          setSelectedCanteen(normalizedSelection)
                           fetchCanteenMenu(canteen._id)
                         }}>
                         <h4 className="font-bold text-lg text-text-dark mb-2">{canteen.name}</h4>
@@ -2492,6 +2625,166 @@ export default function TenantDashboard() {
                       <X className="w-6 h-6" />
                     </button>
                   </div>
+
+                  {/* Subscription Plans - Show First */}
+                  {(() => {
+                    console.log('🔍 Selected Canteen:', selectedCanteen)
+                    console.log('📋 Subscription Plans:', selectedCanteen?.subscriptionPlans)
+                    
+                    if (!selectedCanteen?.subscriptionPlans) {
+                      return (
+                        <div className="mb-8 pb-8 border-b-2 border-gray-200">
+                          <div className="bg-gradient-to-r from-yellow-50 to-orange-50 rounded-xl p-6 border-2 border-yellow-300">
+                            <div className="flex items-center gap-3">
+                              <span className="text-4xl">ℹ️</span>
+                              <div>
+                                <h4 className="text-xl font-bold text-yellow-800">No Subscription Plans Available</h4>
+                                <p className="text-sm text-yellow-700">This canteen hasn't set up monthly meal subscriptions yet. You can still order individual items from the menu below.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    }
+                    
+                    const enabledPlans = Object.entries(selectedCanteen.subscriptionPlans).filter(
+                      ([, plan]) => plan && plan.enabled
+                    )
+                    
+                    console.log('✅ Enabled Plans:', enabledPlans)
+                    
+                    if (enabledPlans.length === 0) {
+                      return (
+                        <div className="mb-8 pb-8 border-b-2 border-gray-200">
+                          <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border-2 border-blue-300">
+                            <div className="flex items-center gap-3">
+                              <span className="text-4xl">🍱</span>
+                              <div>
+                                <h4 className="text-xl font-bold text-blue-800">Subscription Plans Coming Soon</h4>
+                                <p className="text-sm text-blue-700">Monthly meal subscriptions are being configured for this canteen. Browse the menu below for one-time orders.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    }
+
+                    return (
+                      <div className="mb-8 pb-8 border-b-2 border-gray-200">
+                        <div className="bg-gradient-to-r from-green-50 to-blue-50 rounded-xl p-6 mb-4 border-2 border-green-300">
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className="text-4xl">🍱</span>
+                            <div>
+                              <h4 className="text-2xl font-bold text-green-800">Monthly Subscription Plans</h4>
+                              <p className="text-sm text-green-700">Subscribe to get meals delivered daily to your room</p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {enabledPlans.map(([key, plan]) => {
+                            const hasWeeklyMenu = plan.weeklyMenu && Object.values(plan.weeklyMenu).some(menu => menu && menu.trim())
+                            const isExpanded = expandedSubscriptionPlan === key
+                            const planMealTypes = ['breakfast', 'lunch', 'dinner']
+                            const hasMealType = planMealTypes.some(type => key.includes(type) && key.split('_').length === 1)
+                            
+                            return (
+                              <div
+                                key={key}
+                                className="border-2 border-green-300 rounded-xl p-5 bg-gradient-to-br from-white to-green-50 hover:shadow-xl transition-all"
+                              >
+                                <div className="flex items-center justify-between mb-3">
+                                  <h5 className="font-bold text-xl text-green-800 capitalize">
+                                    {key.replace(/_/g, ' ')}
+                                  </h5>
+                                  <span className="text-3xl">
+                                    {key.includes('breakfast') ? '🍳' : key.includes('lunch') ? '🍛' : key.includes('dinner') ? '🍽️' : '🍱'}
+                                  </span>
+                                </div>
+                                <div className="space-y-2 mb-4">
+                                  {plan.pure_veg > 0 && (
+                                    <div className="flex justify-between items-center bg-white rounded-lg p-2 border border-green-200">
+                                      <span className="text-sm font-semibold flex items-center gap-2">
+                                        <span className="w-3 h-3 bg-green-500 rounded-full"></span>
+                                        Pure Veg
+                                      </span>
+                                      <span className="font-bold text-lg text-green-700">₹{plan.pure_veg}/mo</span>
+                                    </div>
+                                  )}
+                                  {plan.veg > 0 && (
+                                    <div className="flex justify-between items-center bg-white rounded-lg p-2 border border-lime-200">
+                                      <span className="text-sm font-semibold flex items-center gap-2">
+                                        <span className="w-3 h-3 bg-lime-500 rounded-full"></span>
+                                        Veg
+                                      </span>
+                                      <span className="font-bold text-lg text-lime-700">₹{plan.veg}/mo</span>
+                                    </div>
+                                  )}
+                                  {plan.non_veg_mix > 0 && (
+                                    <div className="flex justify-between items-center bg-white rounded-lg p-2 border border-orange-200">
+                                      <span className="text-sm font-semibold flex items-center gap-2">
+                                        <span className="w-3 h-3 bg-orange-500 rounded-full"></span>
+                                        Non-Veg Mix
+                                      </span>
+                                      <span className="font-bold text-lg text-orange-700">₹{plan.non_veg_mix}/mo</span>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* View Menu Button - Only for single meal plans with weekly menu */}
+                                {hasWeeklyMenu && hasMealType && (
+                                  <button
+                                    onClick={() => setExpandedSubscriptionPlan(isExpanded ? null : key)}
+                                    className="w-full bg-blue-500 text-white py-2 rounded-lg font-semibold hover:bg-blue-600 transition shadow-md mb-2 flex items-center justify-center gap-2"
+                                  >
+                                    <span>📋 {isExpanded ? 'Hide' : 'View'} Weekly Menu</span>
+                                    <span className="text-lg">{isExpanded ? '▼' : '▶'}</span>
+                                  </button>
+                                )}
+
+                                {/* Subscribe Button */}
+                                <button
+                                  onClick={() => handleSubscribeClick(key, plan)}
+                                  className="w-full bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700 transition shadow-md hover:shadow-lg"
+                                  disabled={!plan.enabled}
+                                >
+                                  📅 Subscribe Now
+                                </button>
+
+                                {/* Weekly Menu Expansion */}
+                                {isExpanded && hasWeeklyMenu && hasMealType && (
+                                  <div className="mt-4 pt-4 border-t-2 border-green-300 bg-gradient-to-br from-blue-50 to-green-50 p-4 rounded-lg animate-slideDown">
+                                    <div className="flex items-center gap-2 mb-4">
+                                      <span className="text-2xl">📅</span>
+                                      <h6 className="font-bold text-lg text-blue-800">Weekly Menu</h6>
+                                    </div>
+                                    <div className="space-y-2">
+                                      {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((day, idx) => {
+                                        const dayMenu = plan.weeklyMenu[day]
+                                        if (!dayMenu || !dayMenu.trim()) return null
+                                        return (
+                                          <div key={day} className="bg-white rounded-lg p-3 border border-blue-200 shadow-sm">
+                                            <div className="flex items-start gap-2">
+                                              <span className="bg-blue-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0">
+                                                {idx + 1}
+                                              </span>
+                                              <div className="flex-1">
+                                                <p className="font-bold text-sm text-blue-900 capitalize mb-1">{day}</p>
+                                                <p className="text-sm text-gray-700 leading-relaxed">{dayMenu}</p>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        )
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })()}
 
                   {/* Category Filter */}
                   <div className="flex gap-2 mb-6 flex-wrap">
@@ -2568,7 +2861,7 @@ export default function TenantDashboard() {
                       </button>
                       <button
                         onClick={() => {
-                          fetchMyOrders()
+                          fetchMyOrders({ force: true })
                           setShowOrdersModal(true)
                         }}
                         className="bg-blue-500 text-white px-8 py-3 rounded-xl font-bold hover:bg-blue-600 transition shadow-lg hover:shadow-xl flex items-center gap-3"
@@ -2584,49 +2877,6 @@ export default function TenantDashboard() {
                       <p className="text-text-muted">No items available in this category</p>
                     </div>
                   )}
-
-                  {/* Subscription Plans */}
-                  {selectedCanteen.subscriptionPlans && (
-                    <div className="mt-8 pt-8 border-t">
-                      <h4 className="text-xl font-bold text-text-dark mb-4">📅 Monthly Subscription Plans</h4>
-                      <div className="grid md:grid-cols-2 gap-4">
-                        {Object.entries(selectedCanteen.subscriptionPlans)
-                          .filter(([key, plan]) => plan.enabled)
-                          .map(([key, plan]) => (
-                            <div key={key} className="border-2 border-primary rounded-xl p-4 bg-gradient-to-br from-green-50 to-blue-50">
-                              <h5 className="font-bold text-lg text-primary capitalize mb-3">{key.replace('_', ' ')}</h5>
-                              <div className="space-y-2">
-                                {plan.pure_veg > 0 && (
-                                  <div className="flex justify-between">
-                                    <span className="text-sm">🟢 Pure Veg</span>
-                                    <span className="font-bold text-green-700">₹{plan.pure_veg}/month</span>
-                                  </div>
-                                )}
-                                {plan.veg > 0 && (
-                                  <div className="flex justify-between">
-                                    <span className="text-sm">🥗 Veg</span>
-                                    <span className="font-bold text-lime-700">₹{plan.veg}/month</span>
-                                  </div>
-                                )}
-                                {plan.non_veg_mix > 0 && (
-                                  <div className="flex justify-between">
-                                    <span className="text-sm">🍗 Non-Veg Mix</span>
-                                    <span className="font-bold text-orange-700">₹{plan.non_veg_mix}/month</span>
-                                  </div>
-                                )}
-                              </div>
-                              <button 
-                                onClick={() => handleSubscribeClick(key, plan)}
-                                className="w-full mt-4 btn-primary text-sm hover:shadow-lg transition"
-                                disabled={!plan.enabled}
-                              >
-                                Subscribe Now
-                              </button>
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
             </div>
@@ -2638,7 +2888,7 @@ export default function TenantDashboard() {
                 <div className="flex items-center justify-between mb-6">
                   <h3 className="text-2xl font-bold text-text-dark">📄 My Rental Contracts</h3>
                   <button
-                    onClick={fetchMyContracts}
+                    onClick={() => fetchMyContracts({ force: true })}
                     className="btn-secondary"
                     disabled={contractsLoading}
                   >
@@ -2655,7 +2905,7 @@ export default function TenantDashboard() {
                   <div className="text-center py-12">
                     <div className="text-6xl mb-4">📋</div>
                     <p className="text-text-muted text-lg mb-4">No contracts found</p>
-                    <button onClick={fetchMyContracts} className="btn-primary">
+                    <button onClick={() => fetchMyContracts({ force: true })} className="btn-primary">
                       Load My Contracts
                     </button>
                   </div>
@@ -3084,7 +3334,7 @@ export default function TenantDashboard() {
                       onClick={() => {
                         // Pre-fill form if there's an existing rating for current hostel
                         const activeContract = myContracts.find(c => c.status === 'active')
-                        const existingRating = myHostelFeedbacks.find(f => f.target?._id === activeContract?.hostel?._id)
+                        const existingRating = findHostelFeedback(myHostelFeedbacks, activeContract?.hostel?._id)
                         if (existingRating) {
                           setHostelRating(existingRating.rating)
                           setHostelReview(existingRating.comment)
@@ -3096,7 +3346,7 @@ export default function TenantDashboard() {
                       }}
                       className="btn-primary"
                     >
-                      {myHostelFeedbacks.find(f => f.target?._id === myContracts.find(c => c.status === 'active')?.hostel?._id) 
+                      {findHostelFeedback(myHostelFeedbacks, myContracts.find(c => c.status === 'active')?.hostel?._id) 
                         ? '✏️ Update Rating' 
                         : '⭐ Rate Hostel'}
                     </button>
@@ -3125,19 +3375,18 @@ export default function TenantDashboard() {
                     {/* Show existing rating for current hostel */}
                     {(() => {
                       const activeContract = myContracts.find(c => c.status === 'active')
-                      const hostelId = activeContract?.hostel?._id?.toString()
-                      const existingRating = myHostelFeedbacks.find(f => {
-                        const targetId = f.target?._id?.toString()
-                        return targetId === hostelId
-                      })
+                      const hostelId = activeContract?.hostel?._id
+                      const existingRating = findHostelFeedback(myHostelFeedbacks, hostelId)
                       
-                      console.log('Active Contract Hostel ID:', hostelId)
+                      console.log('🔍 Rendering feedback section...')
+                      console.log('Active Contract Hostel ID:', normalizeObjectId(hostelId))
                       console.log('My Hostel Feedbacks:', myHostelFeedbacks)
                       console.log('Found Existing Rating:', existingRating)
+                      console.log('Feedback Update Trigger:', feedbackUpdateTrigger)
                       
                       if (existingRating) {
                         return (
-                          <div key={`${existingRating._id}-${existingRating.updatedAt || existingRating.createdAt}`} className="bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg p-5 border-2 border-yellow-200">
+                          <div key={`feedback-${existingRating._id}-${feedbackUpdateTrigger}-${existingRating.updatedAt || existingRating.createdAt}`} className="bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg p-5 border-2 border-yellow-200">
                             <div className="flex items-start justify-between mb-3">
                               <div className="flex items-center gap-3">
                                 <span className="text-3xl">⭐</span>
@@ -3216,7 +3465,7 @@ export default function TenantDashboard() {
                     <p className="text-sm text-gray-600 mt-1">View all your order ratings and reviews</p>
                   </div>
                   <button
-                    onClick={fetchMyOrders}
+                    onClick={() => fetchMyOrders({ force: true })}
                     className="btn-secondary text-sm"
                   >
                     🔄 Refresh
@@ -4219,7 +4468,7 @@ export default function TenantDashboard() {
               <button
                 onClick={() => {
                   setShowOrdersModal(false)
-                  fetchMyOrders()
+                  fetchMyOrders({ force: true })
                 }}
                 className="text-gray-400 hover:text-gray-600 transition text-2xl"
               >
@@ -4520,7 +4769,7 @@ export default function TenantDashboard() {
                   <h2 className="text-2xl font-bold">
                     {(() => {
                       const activeContract = myContracts.find(c => c.status === 'active')
-                      const existingRating = myHostelFeedbacks.find(f => f.target?._id === activeContract?.hostel?._id)
+                      const existingRating = findHostelFeedback(myHostelFeedbacks, activeContract?.hostel?._id)
                       return existingRating ? '✏️ Update Your Rating' : '🏠 Rate Your Hostel'
                     })()}
                   </h2>
@@ -4613,12 +4862,12 @@ export default function TenantDashboard() {
                   className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-500 text-white px-6 py-3 rounded-lg hover:from-blue-600 hover:to-indigo-600 transition-all font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {hostelRatingLoading ? (
-                    myHostelFeedbacks.find(f => f.target?._id === myContracts.find(c => c.status === 'active')?.hostel?._id) 
-                      ? 'Updating...' 
+                    findHostelFeedback(myHostelFeedbacks, myContracts.find(c => c.status === 'active')?.hostel?._id)
+                      ? 'Updating...'
                       : 'Submitting...'
                   ) : (
-                    myHostelFeedbacks.find(f => f.target?._id === myContracts.find(c => c.status === 'active')?.hostel?._id) 
-                      ? '✓ Update Rating' 
+                    findHostelFeedback(myHostelFeedbacks, myContracts.find(c => c.status === 'active')?.hostel?._id)
+                      ? '✓ Update Rating'
                       : '✓ Submit Rating'
                   )}
                 </button>
