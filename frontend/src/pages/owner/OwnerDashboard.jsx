@@ -4,6 +4,8 @@ import { useAuthStore } from '../../store/authStore'
 import { LogOut, Menu, X } from 'lucide-react'
 import { ownerAPI, authAPI } from '../../services/api'
 import LocationPicker from '../../components/LocationPicker'
+import PanoramaViewer from '../../components/PanoramaViewer'
+import CubemapUpload from '../../components/CubemapUpload'
 
 export default function OwnerDashboard() {
   const navigate = useNavigate()
@@ -99,6 +101,8 @@ export default function OwnerDashboard() {
   const [uploadedPhotos, setUploadedPhotos] = useState([])
   const [uploadedVideo, setUploadedVideo] = useState(null)
   const [uploaded360View, setUploaded360View] = useState(null)
+  const [uploadedEditPanorama, setUploadedEditPanorama] = useState(null)
+  const [showEditPanoramaPreview, setShowEditPanoramaPreview] = useState(false)
   const [allRooms, setAllRooms] = useState([])
   const [currentImageIndex, setCurrentImageIndex] = useState({}) // Track current image for each room
   const [tenants, setTenants] = useState([])
@@ -133,6 +137,10 @@ export default function OwnerDashboard() {
   })
   const [roomMessage, setRoomMessage] = useState('')
   const [roomLoading, setRoomLoading] = useState(false)
+  
+  // Panorama preview state
+  const [panoramaPreview, setPanoramaPreview] = useState(null) // { file, url }
+  const [showPanoramaPreview, setShowPanoramaPreview] = useState(false)
 
   // Preset amenity options
   const amenityOptions = [
@@ -1870,6 +1878,19 @@ export default function OwnerDashboard() {
                     </span>
                   </div>
 
+                  {/* Cubemap Upload Section */}
+                  <div className="border-t pt-6 mt-6">
+                    <CubemapUpload 
+                      onUploadSuccess={(data) => {
+                        console.log('Panorama created:', data);
+                        setPanoramaPreview({ 
+                          file: null, 
+                          url: `http://localhost:5001${data.url}` 
+                        });
+                      }}
+                    />
+                  </div>
+
                   {/* Submit Button */}
                   <button 
                     className="btn-primary w-full mt-6 py-3 text-base font-medium" 
@@ -2212,6 +2233,14 @@ export default function OwnerDashboard() {
                   console.log('360 view uploaded successfully')
                 }
                 
+                // Upload panorama if selected
+                if (uploadedEditPanorama) {
+                  const formData = new FormData()
+                  formData.append('panorama', uploadedEditPanorama.file)
+                  await ownerAPI.uploadRoomMedia(editingRoom._id, [uploadedEditPanorama.file], 'panorama')
+                  console.log('Panorama uploaded successfully')
+                }
+                
                 // Refresh rooms list
                 const res = await ownerAPI.getHostelRooms(selectedHostelId)
                 setRooms(res.data?.data || [])
@@ -2233,6 +2262,7 @@ export default function OwnerDashboard() {
                   setUploadedPhotos([])
                   setUploadedVideo(null)
                   setUploaded360View(null)
+                  setUploadedEditPanorama(null)
                 }, 1500)
               } catch (err) {
                 console.error('Error updating room:', err)
@@ -2653,6 +2683,51 @@ export default function OwnerDashboard() {
                     </button>
                   </div>
                 )}
+              </div>
+
+              {/* Cubemap Upload */}
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  🎯 360° Room Panorama
+                </label>
+                
+                {editingRoom?.panorama?.url && (
+                  <div className="mb-3">
+                    <p className="text-sm font-medium text-gray-700 mb-2">Current Panorama</p>
+                    <div className="border rounded-lg p-3 bg-gray-50">
+                      <img 
+                        src={editingRoom.panorama.url} 
+                        alt="Current panorama"
+                        className="w-full max-w-md rounded-lg mb-2"
+                      />
+                      <button
+                        type="button"
+                        className="px-4 py-2 bg-primary text-white rounded-lg text-sm hover:bg-blue-600 transition-colors"
+                        onClick={() => {
+                          setUploadedEditPanorama({
+                            file: null,
+                            url: editingRoom.panorama.url,
+                            name: editingRoom.panorama.originalFilename || 'current-panorama.jpg'
+                          })
+                          setShowEditPanoramaPreview(true)
+                        }}
+                      >
+                        🎯 Preview Current Panorama
+                      </button>
+                    </div>
+                  </div>
+                )}
+                
+                <CubemapUpload 
+                  onUploadSuccess={(data) => {
+                    console.log('Edit room panorama created:', data);
+                    setUploadedEditPanorama({ 
+                      file: null, 
+                      url: `http://localhost:5001${data.url}`,
+                      name: data.filename
+                    });
+                  }}
+                />
               </div>
             </div>
 
@@ -3128,6 +3203,125 @@ export default function OwnerDashboard() {
         }}
         onClose={() => setShowLocationPicker(false)}
       />
+    )}
+
+    {/* Panorama Preview Modal */}
+    {showPanoramaPreview && panoramaPreview && (
+      <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+          {/* Modal Header */}
+          <div className="flex justify-between items-center p-6 border-b">
+            <div>
+              <h3 className="text-2xl font-semibold text-gray-800">360° Panorama Preview</h3>
+              <p className="text-sm text-gray-600 mt-1">{panoramaPreview.file.name}</p>
+            </div>
+            <button
+              onClick={() => setShowPanoramaPreview(false)}
+              className="text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Viewer Container */}
+          <div className="flex-1 p-6 bg-gray-900">
+            <PanoramaViewer 
+              panoramaUrl={panoramaPreview.url}
+              width="100%"
+              height="600px"
+            />
+          </div>
+
+          {/* Modal Footer */}
+          <div className="p-6 border-t bg-gray-50 flex justify-between items-center">
+            <div className="text-sm text-gray-600">
+              <p className="font-medium mb-1">Controls:</p>
+              <p>🖱️ Drag to look around • 🔍 Scroll to zoom</p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  URL.revokeObjectURL(panoramaPreview.url);
+                  setPanoramaPreview(null);
+                  setShowPanoramaPreview(false);
+                  document.getElementById('panorama-upload').value = '';
+                }}
+                className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors"
+              >
+                Remove & Close
+              </button>
+              <button
+                onClick={() => setShowPanoramaPreview(false)}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Looks Good!
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Edit Panorama Preview Modal */}
+    {showEditPanoramaPreview && uploadedEditPanorama && (
+      <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-[70] p-4">
+        <div className="bg-white rounded-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+          {/* Modal Header */}
+          <div className="flex justify-between items-center p-6 border-b">
+            <div>
+              <h3 className="text-2xl font-semibold text-gray-800">🎯 360° Cube View Preview</h3>
+              <p className="text-sm text-gray-600 mt-1">{uploadedEditPanorama.name}</p>
+            </div>
+            <button
+              onClick={() => setShowEditPanoramaPreview(false)}
+              className="text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Viewer Container */}
+          <div className="flex-1 p-6 bg-gray-900">
+            <PanoramaViewer 
+              panoramaUrl={uploadedEditPanorama.url}
+              width="100%"
+              height="600px"
+            />
+          </div>
+
+          {/* Modal Footer */}
+          <div className="p-6 border-t bg-gray-50 flex justify-between items-center">
+            <div className="text-sm text-gray-600">
+              <p className="font-medium mb-1">Controls:</p>
+              <p>🖱️ Drag to look around • 🔍 Scroll to zoom in/out</p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  if (uploadedEditPanorama.file) {
+                    URL.revokeObjectURL(uploadedEditPanorama.url);
+                    setUploadedEditPanorama(null);
+                  }
+                  setShowEditPanoramaPreview(false);
+                }}
+                className="px-6 py-2 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition-colors"
+              >
+                Remove & Close
+              </button>
+              <button
+                onClick={() => setShowEditPanoramaPreview(false)}
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Looks Good!
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     )}
     </>
   )

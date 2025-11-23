@@ -50,6 +50,16 @@ const roomSchema = new mongoose.Schema({
     type: String,
     default: '',
   },
+  panorama: {
+    url: String,
+    filename: String,
+    originalFilename: String,
+    uploadedAt: Date,
+    dimensions: {
+      width: Number,
+      height: Number,
+    },
+  },
   isAvailable: {
     type: Boolean,
     default: true,

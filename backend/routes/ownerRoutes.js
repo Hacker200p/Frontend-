@@ -9,6 +9,7 @@ const {
   getHostelRooms,
   updateRoom,
   uploadRoomMedia,
+  deleteRoomPanorama,
   getMyTenants,
   getHostelTenants,
   approveTenantContract,
@@ -45,8 +46,10 @@ router.delete('/rooms/:id', require('../controllers/ownerController').deleteRoom
 router.post('/rooms/:id/upload', upload.fields([
   { name: 'photos', maxCount: 10 },
   { name: 'video', maxCount: 1 },
-  { name: 'view360', maxCount: 1 }
+  { name: 'view360', maxCount: 1 },
+  { name: 'panorama', maxCount: 1 }
 ]), uploadRoomMedia);
+router.delete('/rooms/:id/panorama', deleteRoomPanorama);
 
 // Tenant management routes
 router.get('/tenants', getMyTenants);

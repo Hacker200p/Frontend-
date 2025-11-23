@@ -5,6 +5,11 @@ const User = require('../models/User');
 const DeletionRequest = require('../models/DeletionRequest');
 const Contract = require('../models/Contract');
 const Feedback = require('../models/Feedback');
+const axios = require('axios');
+const FormData = require('form-data');
+
+// Panorama service URL from environment
+const PANORAMA_SERVICE_URL = process.env.PANORAMA_SERVICE_URL || 'http://localhost:5001';
 
 // @desc    Create new hostel
 // @route   POST /api/owner/hostels
@@ -405,6 +410,39 @@ const uploadRoomMedia = async (req, res) => {
       });
       room.view360Url = view360Result;
     }
+
+    // Handle panorama upload - send to Python service
+    if (files.panorama && files.panorama[0]) {
+      try {
+        const formData = new FormData();
+        formData.append('file', files.panorama[0].buffer, files.panorama[0].originalname);
+        formData.append('width', '4096'); // High quality for Three.js
+        
+        const panoramaResponse = await axios.post(
+          `${PANORAMA_SERVICE_URL}/upload-panorama`,
+          formData,
+          {
+            headers: formData.getHeaders(),
+            maxContentLength: Infinity,
+            maxBodyLength: Infinity,
+            timeout: 60000, // 60 second timeout
+          }
+        );
+
+        if (panoramaResponse.data.success) {
+          room.panorama = {
+            url: `${PANORAMA_SERVICE_URL}${panoramaResponse.data.url}`,
+            filename: panoramaResponse.data.filename,
+            originalFilename: files.panorama[0].originalname,
+            uploadedAt: new Date(),
+            dimensions: panoramaResponse.data.dimensions,
+          };
+        }
+      } catch (panoramaError) {
+        console.error('Panorama upload error:', panoramaError.message);
+        // Continue without panorama if it fails
+      }
+    }
     
     await room.save();
     
@@ -780,6 +818,44 @@ const getHostelFeedbacks = async (req, res) => {
   }
 };
 
+// @desc    Delete room panorama
+// @route   DELETE /api/owner/rooms/:id/panorama
+// @access  Private/Owner
+const deleteRoomPanorama = async (req, res) => {
+  try {
+    const room = await Room.findById(req.params.id).populate('hostel');
+    
+    if (!room) {
+      return res.status(404).json({ success: false, message: 'Room not found' });
+    }
+    
+    if (room.hostel.owner.toString() !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+    }
+
+    if (!room.panorama || !room.panorama.filename) {
+      return res.status(404).json({ success: false, message: 'No panorama found' });
+    }
+
+    // Delete from Python service
+    try {
+      await axios.delete(`${PANORAMA_SERVICE_URL}/panorama/${room.panorama.filename}`);
+    } catch (deleteError) {
+      console.error('Failed to delete panorama from service:', deleteError.message);
+      // Continue even if deletion fails on the service
+    }
+
+    // Remove from database
+    room.panorama = undefined;
+    await room.save();
+
+    res.json({ success: true, message: 'Panorama deleted successfully' });
+  } catch (error) {
+    console.error('Delete panorama error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   createHostel,
   getMyHostels,
@@ -792,6 +868,7 @@ module.exports = {
   updateRoom,
   deleteRoom,
   uploadRoomMedia,
+  deleteRoomPanorama,
   getMyTenants,
   getHostelTenants,
   approveTenantContract,
