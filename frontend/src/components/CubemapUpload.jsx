@@ -351,6 +351,7 @@ const CubemapUpload = ({ onUploadSuccess }) => {
         flexWrap: 'wrap'
       }}>
         <button
+          type="button"
           onClick={handleStitch}
           disabled={!allFacesUploaded || uploading}
           style={{
@@ -381,6 +382,7 @@ const CubemapUpload = ({ onUploadSuccess }) => {
         
         {result && previewUrl && (
           <button
+            type="button"
             onClick={() => {
               console.log('Opening preview modal');
               setShowPreview(true);
@@ -414,6 +416,7 @@ const CubemapUpload = ({ onUploadSuccess }) => {
         )}
         
         <button
+          type="button"
           onClick={resetAll}
           disabled={uploading}
           style={{
@@ -441,6 +444,14 @@ const CubemapUpload = ({ onUploadSuccess }) => {
       {/* Preview Modal */}
       {showPreview && previewUrl && (
         <div 
+          key="panorama-modal"
+          onClick={(e) => {
+            // Only log, don't close - user must use buttons
+            console.log('Modal background clicked - use buttons to close');
+            e.stopPropagation();
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onMouseUp={(e) => e.stopPropagation()}
           style={{
             position: 'fixed',
             top: 0,
@@ -465,7 +476,12 @@ const CubemapUpload = ({ onUploadSuccess }) => {
               overflow: 'hidden',
               boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)'
             }}
-            onClick={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onMouseUp={(e) => e.stopPropagation()}
           >
             <div style={{
               padding: '20px',
@@ -481,7 +497,11 @@ const CubemapUpload = ({ onUploadSuccess }) => {
                 Use mouse to rotate • Scroll to zoom • Click Confirm to save
               </p>
               <button
-                onClick={() => setShowPreview(false)}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowPreview(false);
+                }}
                 style={{
                   position: 'absolute',
                   top: '20px',
@@ -518,9 +538,17 @@ const CubemapUpload = ({ onUploadSuccess }) => {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                minHeight: '500px'
+                minHeight: '500px',
+                position: 'relative'
               }}
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onMouseUp={(e) => e.stopPropagation()}
+              onTouchStart={(e) => e.stopPropagation()}
+              onTouchEnd={(e) => e.stopPropagation()}
             >
               <PanoramaViewer
                 panoramaUrl={previewUrl}
@@ -539,6 +567,7 @@ const CubemapUpload = ({ onUploadSuccess }) => {
               background: '#f8f9fa'
             }}>
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleConfirmUpload();
@@ -568,6 +597,7 @@ const CubemapUpload = ({ onUploadSuccess }) => {
               </button>
               
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   handleCancelPreview();
@@ -598,6 +628,7 @@ const CubemapUpload = ({ onUploadSuccess }) => {
               </button>
 
               <button
+                type="button"
                 onClick={(e) => {
                   e.stopPropagation();
                   resetAll();

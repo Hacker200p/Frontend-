@@ -327,6 +327,16 @@ const deleteRoom = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
 
+    // Delete panorama from Cloudinary if exists
+    if (room.panorama?.publicId) {
+      try {
+        await cloudinary.uploader.destroy(room.panorama.publicId);
+        console.log('Deleted panorama from Cloudinary:', room.panorama.publicId);
+      } catch (deleteError) {
+        console.error('Error deleting panorama:', deleteError.message);
+      }
+    }
+
     await room.deleteOne();
 
     // Update hostel counters
@@ -411,15 +421,25 @@ const uploadRoomMedia = async (req, res) => {
       room.view360Url = view360Result;
     }
 
-    // Handle panorama upload - send to Python service
+    // Handle panorama upload - send to Python service then upload to Cloudinary
     if (files.panorama && files.panorama[0]) {
       try {
+        // Delete old panorama from Cloudinary if exists
+        if (room.panorama?.publicId) {
+          try {
+            await cloudinary.uploader.destroy(room.panorama.publicId);
+            console.log('Deleted old panorama from Cloudinary:', room.panorama.publicId);
+          } catch (deleteError) {
+            console.error('Error deleting old panorama:', deleteError.message);
+          }
+        }
+        
         const formData = new FormData();
         formData.append('file', files.panorama[0].buffer, files.panorama[0].originalname);
         formData.append('width', '4096'); // High quality for Three.js
         
         const panoramaResponse = await axios.post(
-          `${PANORAMA_SERVICE_URL}/upload-panorama`,
+          `${PANORAMA_SERVICE_URL}/stitch-base64`,
           formData,
           {
             headers: formData.getHeaders(),
@@ -429,14 +449,32 @@ const uploadRoomMedia = async (req, res) => {
           }
         );
 
-        if (panoramaResponse.data.success) {
+        if (panoramaResponse.data.success && panoramaResponse.data.imageBase64) {
+          // Upload base64 image to Cloudinary
+          const cloudinaryResult = await cloudinary.uploader.upload(
+            `data:image/jpeg;base64,${panoramaResponse.data.imageBase64}`,
+            {
+              resource_type: 'image',
+              folder: 'safestay/rooms/panoramas',
+              transformation: [
+                { quality: 'auto:good' },
+                { fetch_format: 'auto' }
+              ]
+            }
+          );
+
           room.panorama = {
-            url: `${PANORAMA_SERVICE_URL}${panoramaResponse.data.url}`,
-            filename: panoramaResponse.data.filename,
+            url: cloudinaryResult.secure_url,
+            publicId: cloudinaryResult.public_id,
             originalFilename: files.panorama[0].originalname,
             uploadedAt: new Date(),
-            dimensions: panoramaResponse.data.dimensions,
+            dimensions: {
+              width: panoramaResponse.data.width,
+              height: panoramaResponse.data.height
+            }
           };
+          
+          console.log('Panorama uploaded to Cloudinary:', cloudinaryResult.public_id);
         }
       } catch (panoramaError) {
         console.error('Panorama upload error:', panoramaError.message);

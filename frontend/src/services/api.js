@@ -217,6 +217,8 @@ export const ownerAPI = {
       form.append('video', files[0])
     } else if (mediaType === 'view360') {
       form.append('view360', files[0])
+    } else if (mediaType === 'panorama') {
+      form.append('panorama', files[0])
     }
     return api.post(`/owner/rooms/${roomId}/upload`, form, {
       headers: { 'Content-Type': 'multipart/form-data' },

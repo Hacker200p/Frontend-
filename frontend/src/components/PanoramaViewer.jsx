@@ -291,21 +291,24 @@ const PanoramaViewer = ({
 
       {/* Control Panel */}
       {showControls && !loading && !error && (
-        <div style={{
-          position: 'absolute',
-          bottom: '20px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          display: 'flex',
-          gap: '10px',
-          background: 'rgba(0,0,0,0.7)',
-          padding: '12px 20px',
-          borderRadius: '50px',
-          backdropFilter: 'blur(10px)',
-          zIndex: 5
-        }}>
+        <div 
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: 'absolute',
+            bottom: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            gap: '10px',
+            background: 'rgba(0,0,0,0.7)',
+            padding: '12px 20px',
+            borderRadius: '50px',
+            backdropFilter: 'blur(10px)',
+            zIndex: 5
+          }}>
           <button
             onClick={(e) => {
+              e.preventDefault();
               e.stopPropagation();
               resetView();
             }}
@@ -331,6 +334,7 @@ const PanoramaViewer = ({
           
           <button
             onClick={(e) => {
+              e.preventDefault();
               e.stopPropagation();
               toggleAutoRotate();
             }}
@@ -356,6 +360,7 @@ const PanoramaViewer = ({
 
           <button
             onClick={(e) => {
+              e.preventDefault();
               e.stopPropagation();
               toggleFullscreen();
             }}

@@ -175,16 +175,16 @@ def stitch_cubemap_to_equirectangular(front, back, left, right, top, bottom, out
     
     front, back, left, right, top, bottom = processed_images
     
-    # Convert PIL images to numpy arrays and stack them
+    # Convert PIL images to numpy arrays as a list (not stacked)
     # py360convert expects cubemap in specific order: [F, R, B, L, U, D]
-    cube_faces = np.stack([
+    cube_faces = [
         np.array(front),   # Front
         np.array(right),   # Right
         np.array(back),    # Back
         np.array(left),    # Left
         np.array(top),     # Up (ceiling)
         np.array(bottom)   # Down (floor)
-    ])
+    ]
     
     # Convert cubemap to equirectangular with smoother interpolation
     output_height = output_width // 2
@@ -206,6 +206,7 @@ def health_check():
         'service': 'Panorama Conversion Service',
         'endpoints': {
             '/convert': 'Convert single panorama image',
+            '/upload-panorama': 'Upload and convert panorama (alias for /convert)',
             '/stitch': 'Stitch 6 photos (cubemap) into panorama',
             '/panorama/<filename>': 'Get converted panorama'
         }
@@ -297,6 +298,110 @@ def stitch_panorama():
             front, back, left, right, top, bottom, output_width
         )
         
+        # Convert image to bytes buffer
+        img_buffer = io.BytesIO()
+        equirect_image.save(img_buffer, 'JPEG', quality=95, optimize=True)
+        img_buffer.seek(0)
+        
+        # Return the image data directly
+        return jsonify({
+            'success': True,
+            'width': equirect_image.width,
+            'height': equirect_image.height,
+            'message': 'Successfully stitched 6 photos into panorama',
+            'imageData': 'binary'  # Placeholder - actual binary will be handled differently
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/stitch-base64', methods=['POST'])
+def stitch_panorama_base64():
+    """Stitch 6 individual photos (cubemap) and return as base64"""
+    
+    # Check if all 6 faces are provided
+    required_faces = ['front', 'back', 'left', 'right', 'top', 'bottom']
+    
+    for face in required_faces:
+        if face not in request.files:
+            return jsonify({'error': f'Missing {face} image'}), 400
+    
+    try:
+        import base64
+        
+        # Load all 6 images
+        front = Image.open(request.files['front'].stream).convert('RGB')
+        back = Image.open(request.files['back'].stream).convert('RGB')
+        left = Image.open(request.files['left'].stream).convert('RGB')
+        right = Image.open(request.files['right'].stream).convert('RGB')
+        top = Image.open(request.files['top'].stream).convert('RGB')
+        bottom = Image.open(request.files['bottom'].stream).convert('RGB')
+        
+        # Get custom width from request or use default
+        output_width = int(request.form.get('width', 4096))
+        output_width = min(output_width, 8192)  # Max 8K
+        
+        # Stitch into equirectangular
+        equirect_image = stitch_cubemap_to_equirectangular(
+            front, back, left, right, top, bottom, output_width
+        )
+        
+        # Convert image to base64
+        img_buffer = io.BytesIO()
+        equirect_image.save(img_buffer, 'JPEG', quality=95, optimize=True)
+        img_buffer.seek(0)
+        img_base64 = base64.b64encode(img_buffer.read()).decode('utf-8')
+        
+        return jsonify({
+            'success': True,
+            'width': equirect_image.width,
+            'height': equirect_image.height,
+            'message': 'Successfully stitched 6 photos into panorama',
+            'imageBase64': img_base64
+        }), 200
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/upload-panorama', methods=['POST'])
+def upload_panorama():
+    """Upload and convert a single panorama image (alias for /convert)"""
+    
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    
+    file = request.files['file']
+    
+    if file.filename == '' or not allowed_file(file.filename):
+        return jsonify({'error': 'Invalid file'}), 400
+    
+    try:
+        # Read image
+        image = Image.open(file.stream).convert('RGB')
+        
+        # Get custom width from request or use default
+        output_width = int(request.form.get('width', 4096))
+        output_width = min(output_width, 8192)  # Max 8K
+        
+        # Check if already equirectangular (2:1 ratio)
+        img_array = np.array(image)
+        height, width = img_array.shape[:2]
+        
+        if abs(width / height - 2.0) < 0.1:
+            # Already equirectangular, just resize
+            output_height = output_width // 2
+            equirect_image = image.resize((output_width, output_height), Image.Resampling.LANCZOS)
+        else:
+            # Convert to equirectangular
+            output_height = output_width // 2
+            equirect = py360convert.e2e(
+                img_array,
+                h=output_height,
+                w=output_width,
+                mode='bilinear'
+            )
+            equirect_image = Image.fromarray(equirect.astype('uint8'))
+        
         # Generate unique filename
         output_filename = f"{uuid.uuid4()}.jpg"
         output_path = os.path.join(OUTPUT_FOLDER, output_filename)
@@ -308,9 +413,10 @@ def stitch_panorama():
             'success': True,
             'filename': output_filename,
             'url': f'/panorama/{output_filename}',
-            'width': equirect_image.width,
-            'height': equirect_image.height,
-            'message': 'Successfully stitched 6 photos into panorama'
+            'dimensions': {
+                'width': equirect_image.width,
+                'height': equirect_image.height
+            }
         }), 200
         
     except Exception as e:
@@ -336,6 +442,7 @@ if __name__ == '__main__':
     print("Panorama Conversion Service Starting...")
     print("Endpoints:")
     print("   - POST /convert - Convert single panorama")
+    print("   - POST /upload-panorama - Upload and convert panorama")
     print("   - POST /stitch - Stitch 6 photos into panorama")
     print("   - GET /panorama/<filename> - Get panorama")
     print("   - GET /health - Health check")

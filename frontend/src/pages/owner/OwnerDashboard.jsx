@@ -134,6 +134,7 @@ export default function OwnerDashboard() {
     maxOccupancy: '',
     amenities: [],
     isAvailable: true,
+    panoramaData: null,
   })
   const [roomMessage, setRoomMessage] = useState('')
   const [roomLoading, setRoomLoading] = useState(false)
@@ -817,6 +818,7 @@ export default function OwnerDashboard() {
                                 </span>
                                 {hasVideo && (
                                   <button
+                                    type="button"
                                     onClick={(e) => {
                                       e.stopPropagation()
                                       setCurrentVideoUrl(room.videoUrl)
@@ -825,6 +827,22 @@ export default function OwnerDashboard() {
                                     className="bg-blue-500 hover:bg-blue-600 text-white text-xs px-2 py-1 rounded transition cursor-pointer"
                                   >
                                     🎥 Video
+                                  </button>
+                                )}
+                                {room.panorama?.url && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      setPanoramaPreview({
+                                        file: null,
+                                        url: room.panorama.url
+                                      })
+                                      setShowPanoramaPreview(true)
+                                    }}
+                                    className="bg-purple-500 hover:bg-purple-600 text-white text-xs px-2 py-1 rounded transition cursor-pointer"
+                                  >
+                                    🎯 360° View
                                   </button>
                                 )}
                                 {room.view360Url && (
@@ -941,38 +959,79 @@ export default function OwnerDashboard() {
                           )}
                           
                           {/* Action Buttons */}
-                          <div className="flex gap-2 pt-3 border-t">
-                            <button
-                              onClick={() => {
-                                setEditingRoom(room)
-                                setEditRoomForm({
-                                  roomNumber: room.roomNumber,
-                                  roomType: room.roomType,
-                                  floor: room.floor,
-                                  capacity: room.capacity,
-                                  rent: room.rent,
-                                  securityDeposit: room.securityDeposit,
-                                  amenities: room.amenities || [],
-                                  isAvailable: room.isAvailable,
-                                  photos: room.photos || [],
-                                  videoUrl: room.videoUrl || '',
-                                  view360Url: room.view360Url || ''
-                                })
-                                setUploadedPhotos([])
-                                setUploadedVideo(null)
-                                setUploaded360View(null)
-                                setEditRoomMessage('')
-                              }}
-                              className="flex-1 bg-primary text-white py-2 rounded-lg hover:bg-blue-600 transition text-sm font-semibold"
-                            >
-                              ✏️ Edit
-                            </button>
-                            <button
-                              onClick={() => openRoomsPanel(room.hostelId)}
-                              className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300 transition text-sm font-semibold"
-                            >
-                              🏢 View Hostel
-                            </button>
+                          <div className="space-y-2 pt-3 border-t">
+                            {/* Debug - Show all room data */}
+                            {console.log('Room', room.roomNumber, 'Full Data:', JSON.stringify({
+                              id: room._id,
+                              roomNumber: room.roomNumber,
+                              panorama: room.panorama,
+                              hasPanorama: !!room.panorama,
+                              panoramaUrl: room.panorama?.url
+                            }, null, 2))}
+                            
+                            {/* Primary Actions Row */}
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingRoom(room)
+                                  setEditRoomForm({
+                                    roomNumber: room.roomNumber,
+                                    roomType: room.roomType,
+                                    floor: room.floor,
+                                    capacity: room.capacity,
+                                    rent: room.rent,
+                                    securityDeposit: room.securityDeposit,
+                                    amenities: room.amenities || [],
+                                    isAvailable: room.isAvailable,
+                                    photos: room.photos || [],
+                                    videoUrl: room.videoUrl || '',
+                                    view360Url: room.view360Url || ''
+                                  })
+                                  setUploadedPhotos([])
+                                  setUploadedVideo(null)
+                                  setUploaded360View(null)
+                                  setEditRoomMessage('')
+                                }}
+                                className="flex-1 bg-primary text-white py-2 rounded-lg hover:bg-blue-600 transition text-sm font-semibold"
+                              >
+                                ✏️ Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => openRoomsPanel(room.hostelId)}
+                                className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300 transition text-sm font-semibold"
+                              >
+                                🏢 View Hostel
+                              </button>
+                            </div>
+                            
+                            {/* View 360° Panorama Button - Show if panorama exists */}
+                            {(room.panorama && room.panorama.url) ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  console.log('Opening panorama for room:', room.roomNumber)
+                                  console.log('Panorama URL:', room.panorama.url)
+                                  setPanoramaPreview({
+                                    file: null,
+                                    url: room.panorama.url
+                                  })
+                                  setShowPanoramaPreview(true)
+                                }}
+                                className="w-full bg-gradient-to-r from-purple-500 to-purple-600 text-white py-2.5 rounded-lg hover:from-purple-600 hover:to-purple-700 transition text-sm font-semibold flex items-center justify-center gap-2 shadow-md"
+                              >
+                                <span className="text-lg">🎯</span>
+                                <span>View 360° Panorama</span>
+                              </button>
+                            ) : (
+                              <div className="w-full bg-gray-100 text-gray-500 py-2 rounded-lg text-xs text-center italic">
+                                <div>No 360° panorama - Room ID: {room._id}</div>
+                                <div className="mt-1 text-[10px]">Panorama: {JSON.stringify(room.panorama)}</div>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1629,7 +1688,33 @@ export default function OwnerDashboard() {
                       
                       console.log('API Response:', response)
                       
+                      // Upload panorama if available
+                      if (roomForm.panoramaData && response.data?.data) {
+                        const createdRooms = Array.isArray(response.data.data) ? response.data.data : [response.data.data]
+                        
+                        // Upload panorama to the first created room
+                        if (createdRooms.length > 0) {
+                          try {
+                            console.log('Uploading panorama to room:', createdRooms[0]._id)
+                            
+                            // Fetch the panorama image from Python service
+                            const panoramaUrl = `http://localhost:5001${roomForm.panoramaData.url}`
+                            const panoramaBlob = await fetch(panoramaUrl).then(r => r.blob())
+                            
+                            // Upload to room
+                            const formData = new FormData()
+                            formData.append('panorama', panoramaBlob, 'panorama.jpg')
+                            
+                            await ownerAPI.uploadRoomMedia(createdRooms[0]._id, formData)
+                            console.log('Panorama uploaded successfully')
+                          } catch (panoramaErr) {
+                            console.error('Failed to upload panorama:', panoramaErr)
+                          }
+                        }
+                      }
+                      
                       setRoomMessage(`${roomForm.numberOfRooms} room(s) added successfully!`)
+                      setPanoramaPreview(null)
                       
                       // Refresh hostels list
                       const hostelResp = await ownerAPI.getMyHostels()
@@ -1652,6 +1737,7 @@ export default function OwnerDashboard() {
                           maxOccupancy: '',
                           amenities: [],
                           isAvailable: true,
+                          panoramaData: null,
                         })
                       }, 2000)
                     } catch (err) {
@@ -1882,13 +1968,28 @@ export default function OwnerDashboard() {
                   <div className="border-t pt-6 mt-6">
                     <CubemapUpload 
                       onUploadSuccess={(data) => {
-                        console.log('Panorama created:', data);
+                        console.log('Panorama created from cubemap:', data);
+                        // Store the panorama data to be sent with room creation
+                        setRoomForm({
+                          ...roomForm,
+                          panoramaData: data
+                        });
                         setPanoramaPreview({ 
                           file: null, 
                           url: `http://localhost:5001${data.url}` 
                         });
                       }}
                     />
+                    
+                    {/* Show panorama status */}
+                    {roomForm.panoramaData && (
+                      <div className="mt-3 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                        <div className="flex items-center gap-2 text-purple-700">
+                          <span className="text-lg">✓</span>
+                          <span className="text-sm font-semibold">360° Panorama Ready ({roomForm.panoramaData.width}x{roomForm.panoramaData.height})</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Submit Button */}
@@ -2234,11 +2335,15 @@ export default function OwnerDashboard() {
                 }
                 
                 // Upload panorama if selected
-                if (uploadedEditPanorama) {
-                  const formData = new FormData()
-                  formData.append('panorama', uploadedEditPanorama.file)
-                  await ownerAPI.uploadRoomMedia(editingRoom._id, [uploadedEditPanorama.file], 'panorama')
-                  console.log('Panorama uploaded successfully')
+                if (uploadedEditPanorama && uploadedEditPanorama.file) {
+                  try {
+                    console.log('Uploading panorama to room:', editingRoom._id)
+                    await ownerAPI.uploadRoomMedia(editingRoom._id, [uploadedEditPanorama.file], 'panorama')
+                    console.log('Panorama uploaded successfully')
+                  } catch (panoramaErr) {
+                    console.error('Panorama upload failed:', panoramaErr)
+                    throw panoramaErr
+                  }
                 }
                 
                 // Refresh rooms list
@@ -2719,15 +2824,36 @@ export default function OwnerDashboard() {
                 )}
                 
                 <CubemapUpload 
-                  onUploadSuccess={(data) => {
+                  onUploadSuccess={async (data) => {
                     console.log('Edit room panorama created:', data);
-                    setUploadedEditPanorama({ 
-                      file: null, 
-                      url: `http://localhost:5001${data.url}`,
-                      name: data.filename
-                    });
+                    try {
+                      // Fetch the panorama image from Python service as blob
+                      const panoramaUrl = `http://localhost:5001${data.url}`
+                      const response = await fetch(panoramaUrl)
+                      const blob = await response.blob()
+                      const file = new File([blob], data.filename || 'panorama.jpg', { type: 'image/jpeg' })
+                      
+                      setUploadedEditPanorama({ 
+                        file: file,
+                        url: panoramaUrl,
+                        name: data.filename
+                      });
+                      console.log('Panorama file prepared for upload:', file)
+                    } catch (err) {
+                      console.error('Failed to prepare panorama:', err)
+                    }
                   }}
                 />
+                
+                {/* Show panorama upload status */}
+                {uploadedEditPanorama && uploadedEditPanorama.file && (
+                  <div className="mt-3 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                    <div className="flex items-center gap-2 text-purple-700">
+                      <span className="text-lg">✓</span>
+                      <span className="text-sm font-semibold">New 360° Panorama Ready - Will be uploaded on save</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -3212,10 +3338,13 @@ export default function OwnerDashboard() {
           {/* Modal Header */}
           <div className="flex justify-between items-center p-6 border-b">
             <div>
-              <h3 className="text-2xl font-semibold text-gray-800">360° Panorama Preview</h3>
-              <p className="text-sm text-gray-600 mt-1">{panoramaPreview.file.name}</p>
+              <h3 className="text-2xl font-semibold text-gray-800">🎯 360° Panorama Preview</h3>
+              {panoramaPreview.file?.name && (
+                <p className="text-sm text-gray-600 mt-1">{panoramaPreview.file.name}</p>
+              )}
             </div>
             <button
+              type="button"
               onClick={() => setShowPanoramaPreview(false)}
               className="text-gray-400 hover:text-gray-600 transition-colors"
             >
@@ -3231,6 +3360,8 @@ export default function OwnerDashboard() {
               panoramaUrl={panoramaPreview.url}
               width="100%"
               height="600px"
+              autoRotate={true}
+              showControls={true}
             />
           </div>
 
@@ -3238,25 +3369,32 @@ export default function OwnerDashboard() {
           <div className="p-6 border-t bg-gray-50 flex justify-between items-center">
             <div className="text-sm text-gray-600">
               <p className="font-medium mb-1">Controls:</p>
-              <p>🖱️ Drag to look around • 🔍 Scroll to zoom</p>
+              <p>🖱️ Drag to look around • 🔍 Scroll to zoom • 🔁 Auto-rotate</p>
             </div>
             <div className="flex gap-3">
+              {panoramaPreview.file && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (panoramaPreview.url && panoramaPreview.url.startsWith('blob:')) {
+                      URL.revokeObjectURL(panoramaPreview.url);
+                    }
+                    setPanoramaPreview(null);
+                    setShowPanoramaPreview(false);
+                    const input = document.getElementById('panorama-upload');
+                    if (input) input.value = '';
+                  }}
+                  className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors"
+                >
+                  Remove & Close
+                </button>
+              )}
               <button
-                onClick={() => {
-                  URL.revokeObjectURL(panoramaPreview.url);
-                  setPanoramaPreview(null);
-                  setShowPanoramaPreview(false);
-                  document.getElementById('panorama-upload').value = '';
-                }}
-                className="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 transition-colors"
-              >
-                Remove & Close
-              </button>
-              <button
+                type="button"
                 onClick={() => setShowPanoramaPreview(false)}
                 className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
-                Looks Good!
+                Close
               </button>
             </div>
           </div>

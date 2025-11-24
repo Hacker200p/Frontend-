@@ -52,7 +52,7 @@ const roomSchema = new mongoose.Schema({
   },
   panorama: {
     url: String,
-    filename: String,
+    publicId: String,
     originalFilename: String,
     uploadedAt: Date,
     dimensions: {
