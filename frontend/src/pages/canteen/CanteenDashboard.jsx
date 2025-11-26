@@ -40,8 +40,6 @@ export default function CanteenDashboard() {
   const [hostelsByCity, setHostelsByCity] = useState({})
   const [subscriptions, setSubscriptions] = useState([])
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false)
-  const [showLocationPicker, setShowLocationPicker] = useState(false)
-  const [toast, setToast] = useState({ show: false, message: '', type: 'success' })
   const [subscriptionPlans, setSubscriptionPlans] = useState({
     breakfast: { 
       enabled: false, 
@@ -128,15 +126,12 @@ export default function CanteenDashboard() {
     contactEmail: ''
   })
 
-  // Auto-hide toast after 3 seconds
-  useEffect(() => {
-    if (toast.show) {
-      const timer = setTimeout(() => {
-        setToast({ show: false, message: '', type: 'success' })
-      }, 3000)
-      return () => clearTimeout(timer)
-    }
-  }, [toast.show])
+  // Toast notification state
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' })
+  const showToast = (message, type = 'success') => {
+    setToast({ show: true, message, type })
+    setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000)
+  }
 
   useEffect(() => {
     fetchCanteens()
@@ -352,28 +347,18 @@ export default function CanteenDashboard() {
   }
 
   const handleUpdateSubscriptionPlans = async () => {
-    if (!selectedCanteen) {
-      setToast({ show: true, message: 'Please select a canteen first', type: 'error' })
-      return
-    }
+    if (!selectedCanteen) return
     try {
       setLoading(true)
-      console.log('Updating subscription plans for canteen:', selectedCanteen._id)
-      console.log('Subscription plans data:', subscriptionPlans)
-      
-      const response = await canteenAPI.updateSubscriptionPlans(selectedCanteen._id, { subscriptionPlans })
-      console.log('Update response:', response)
-      
+      await canteenAPI.updateSubscriptionPlans(selectedCanteen._id, { subscriptionPlans })
       await fetchCanteens()
-      setToast({ show: true, message: 'Subscription plans updated successfully!', type: 'success' })
+      const successDiv = document.createElement('div')
+      successDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-4 rounded-lg shadow-lg z-50 flex items-center gap-3'
+      successDiv.innerHTML = '✓ Subscription plans updated successfully!'
+      document.body.appendChild(successDiv)
+      setTimeout(() => successDiv.remove(), 3000)
     } catch (error) {
-      console.error('Error updating subscription plans:', error)
-      console.error('Error response:', error.response)
-      setToast({ 
-        show: true, 
-        message: error.response?.data?.message || error.message || 'Failed to update subscription plans', 
-        type: 'error' 
-      })
+      showToast(error.response?.data?.message || 'Failed to update subscription plans', 'error')
     } finally {
       setLoading(false)
     }
@@ -382,7 +367,7 @@ export default function CanteenDashboard() {
   const handleAddMenuItem = async (e) => {
     e.preventDefault()
     if (!selectedCanteen) {
-      setToast({ show: true, message: 'Please select a canteen first', type: 'error' })
+      showToast('Please select a canteen first', 'error')
       return
     }
     try {
@@ -404,9 +389,13 @@ export default function CanteenDashboard() {
       setShowAddModal(false)
       resetForm()
       await fetchMenuItems()
-      setToast({ show: true, message: 'Menu item added successfully!', type: 'success' })
+      const successDiv = document.createElement('div')
+      successDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-4 rounded-lg shadow-lg z-50 flex items-center gap-3'
+      successDiv.innerHTML = '✓ Menu item added successfully!'
+      document.body.appendChild(successDiv)
+      setTimeout(() => successDiv.remove(), 3000)
     } catch (error) {
-      setToast({ show: true, message: error.response?.data?.message || 'Failed to add menu item', type: 'error' })
+      showToast(error.response?.data?.message || 'Failed to add menu item', 'error')
     } finally {
       setLoading(false)
     }
@@ -435,9 +424,13 @@ export default function CanteenDashboard() {
       setShowAddModal(false)
       resetForm()
       await fetchMenuItems()
-      setToast({ show: true, message: 'Menu item updated successfully!', type: 'success' })
+      const successDiv = document.createElement('div')
+      successDiv.className = 'fixed top-4 right-4 bg-blue-500 text-white px-6 py-4 rounded-lg shadow-lg z-50 flex items-center gap-3'
+      successDiv.innerHTML = '✓ Menu item updated successfully!'
+      document.body.appendChild(successDiv)
+      setTimeout(() => successDiv.remove(), 3000)
     } catch (error) {
-      setToast({ show: true, message: error.response?.data?.message || 'Failed to update menu item', type: 'error' })
+      showToast(error.response?.data?.message || 'Failed to update menu item', 'error')
     } finally {
       setLoading(false)
     }
@@ -449,9 +442,13 @@ export default function CanteenDashboard() {
       setLoading(true)
       await canteenAPI.deleteMenuItem(itemId)
       await fetchMenuItems()
-      setToast({ show: true, message: 'Menu item deleted successfully!', type: 'success' })
+      const successDiv = document.createElement('div')
+      successDiv.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-4 rounded-lg shadow-lg z-50 flex items-center gap-3'
+      successDiv.innerHTML = '✓ Menu item deleted successfully!'
+      document.body.appendChild(successDiv)
+      setTimeout(() => successDiv.remove(), 3000)
     } catch (error) {
-      setToast({ show: true, message: error.response?.data?.message || 'Failed to delete menu item', type: 'error' })
+      showToast(error.response?.data?.message || 'Failed to delete menu item', 'error')
     } finally {
       setLoading(false)
     }
@@ -470,9 +467,13 @@ export default function CanteenDashboard() {
       }
       
       await fetchCanteens()
-      setToast({ show: true, message: 'Canteen deleted successfully!', type: 'success' })
+      const successDiv = document.createElement('div')
+      successDiv.className = 'fixed top-4 right-4 bg-red-500 text-white px-6 py-4 rounded-lg shadow-lg z-50 flex items-center gap-3'
+      successDiv.innerHTML = '✓ Canteen deleted successfully!'
+      document.body.appendChild(successDiv)
+      setTimeout(() => successDiv.remove(), 3000)
     } catch (error) {
-      setToast({ show: true, message: error.response?.data?.message || 'Failed to delete canteen', type: 'error' })
+      showToast(error.response?.data?.message || 'Failed to delete canteen', 'error')
     } finally {
       setLoading(false)
     }
@@ -554,7 +555,7 @@ export default function CanteenDashboard() {
   const handleCreateCanteen = async (e) => {
     e.preventDefault()
     if (!canteenFormData.hostel) {
-      setToast({ show: true, message: 'Please select a primary hostel', type: 'error' })
+      showToast('Please select a primary hostel', 'error')
       return
     }
     try {
@@ -573,9 +574,14 @@ export default function CanteenDashboard() {
       setShowCanteenModal(false)
       resetCanteenForm()
       await fetchCanteens()
-      setToast({ show: true, message: 'Canteen created successfully!', type: 'success' })
+      // Success feedback with better UI
+      const successDiv = document.createElement('div')
+      successDiv.className = 'fixed top-4 right-4 bg-green-500 text-white px-6 py-4 rounded-lg shadow-lg z-50 flex items-center gap-3 animate-slide-in'
+      successDiv.innerHTML = '✓ Canteen created successfully!'
+      document.body.appendChild(successDiv)
+      setTimeout(() => successDiv.remove(), 3000)
     } catch (error) {
-      setToast({ show: true, message: error.response?.data?.message || 'Failed to create canteen', type: 'error' })
+      showToast(error.response?.data?.message || 'Failed to create canteen', 'error')
     } finally {
       setLoading(false)
     }
@@ -3187,28 +3193,6 @@ export default function CanteenDashboard() {
                 ✓ Confirm Order
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Toast Notification */}
-      {toast.show && (
-        <div className="fixed top-4 right-4 z-50 animate-slide-in">
-          <div className={`px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 min-w-[300px] ${
-            toast.type === 'success' ? 'bg-gradient-to-r from-green-500 to-emerald-600' :
-            toast.type === 'error' ? 'bg-gradient-to-r from-red-500 to-rose-600' :
-            'bg-gradient-to-r from-blue-500 to-indigo-600'
-          } text-white`}>
-            <span className="text-2xl">
-              {toast.type === 'success' ? '✓' : toast.type === 'error' ? '✕' : 'ℹ'}
-            </span>
-            <p className="font-medium flex-1">{toast.message}</p>
-            <button
-              onClick={() => setToast({ show: false, message: '', type: 'success' })}
-              className="text-white/80 hover:text-white text-xl leading-none"
-            >
-              ×
-            </button>
           </div>
         </div>
       )}
