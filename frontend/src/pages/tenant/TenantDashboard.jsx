@@ -104,6 +104,13 @@ export default function TenantDashboard() {
   const [bookingMessage, setBookingMessage] = useState('')
   const [myBooking, setMyBooking] = useState(null)
   
+  // Panorama preview state
+  const [showPanoramaPreview, setShowPanoramaPreview] = useState(false)
+  const [panoramaPreviewUrl, setPanoramaPreviewUrl] = useState(null)
+  
+  // Toast notification state
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' })
+  
   // Canteen state
   const [availableCanteens, setAvailableCanteens] = useState([])
   const [selectedCanteen, setSelectedCanteen] = useState(null)
@@ -224,6 +231,16 @@ export default function TenantDashboard() {
   // Video modal state
   const [showVideoModal, setShowVideoModal] = useState(false)
   const [currentVideoUrl, setCurrentVideoUrl] = useState('')
+
+  // Auto-hide toast after 3 seconds
+  useEffect(() => {
+    if (toast.show) {
+      const timer = setTimeout(() => {
+        setToast({ show: false, message: '', type: 'success' })
+      }, 3000)
+      return () => clearTimeout(timer)
+    }
+  }, [toast.show])
 
   // Fetch feedbacks when feedback tab is opened
   useEffect(() => {
@@ -5710,6 +5727,30 @@ export default function TenantDashboard() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toast.show && (
+        <div className="fixed top-4 right-4 z-[9999] animate-slide-in">
+          <div className={`flex items-center gap-3 px-6 py-4 rounded-xl shadow-2xl border-2 ${
+            toast.type === 'success' 
+              ? 'bg-gradient-to-r from-green-500 to-emerald-500 border-green-300 text-white' 
+              : toast.type === 'error'
+              ? 'bg-gradient-to-r from-red-500 to-rose-500 border-red-300 text-white'
+              : 'bg-gradient-to-r from-blue-500 to-indigo-500 border-blue-300 text-white'
+          }`}>
+            <div className="text-2xl">
+              {toast.type === 'success' ? '✓' : toast.type === 'error' ? '✕' : 'ℹ'}
+            </div>
+            <div className="font-semibold">{toast.message}</div>
+            <button
+              onClick={() => setToast({ show: false, message: '', type: 'success' })}
+              className="ml-2 text-white/80 hover:text-white transition"
+            >
+              ✕
+            </button>
           </div>
         </div>
       )}
