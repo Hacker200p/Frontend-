@@ -78,6 +78,11 @@ const contractSchema = new mongoose.Schema({
   },
   paymentId: String,
   orderId: String,
+  paymentStatus: {
+    type: String,
+    enum: ['pending', 'paid', 'failed', 'refunded'],
+    default: 'pending',
+  },
   terminationReason: String,
   terminatedAt: Date,
 }, { timestamps: true });

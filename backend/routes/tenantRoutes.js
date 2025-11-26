@@ -15,6 +15,8 @@ const {
   getMyDeletionRequest,
   cancelDeletionRequest,
   getMyFeedbacks,
+  sendSOSAlert,
+  getSOSHistory,
 } = require('../controllers/tenantController');
 const { protect } = require('../middleware/authMiddleware');
 const { authorize } = require('../middleware/roleMiddleware');
@@ -36,5 +38,7 @@ router.post('/book-room', bookRoom);
 router.post('/deletion-request', requestAccountDeletion);
 router.get('/deletion-request', getMyDeletionRequest);
 router.delete('/deletion-request/:id', cancelDeletionRequest);
+router.post('/sos', sendSOSAlert);
+router.get('/sos/history', getSOSHistory);
 
 module.exports = router;

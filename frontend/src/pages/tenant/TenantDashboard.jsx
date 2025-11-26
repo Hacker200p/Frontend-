@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
 import { LogOut, Menu, X } from 'lucide-react'
-import api, { tenantAPI, canteenAPI, contractAPI } from '../../services/api'
+import api, { tenantAPI, canteenAPI, contractAPI, authAPI } from '../../services/api'
+import PanoramaViewer from '../../components/PanoramaViewer'
 
 const WEEK_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 
@@ -150,7 +151,11 @@ export default function TenantDashboard() {
   const [profileForm, setProfileForm] = useState({
     name: user?.name || '',
     email: user?.email || '',
-    phone: user?.phone || ''
+    phone: user?.phone || '',
+    displayName: user?.displayName || user?.name || '',
+    bio: user?.bio || '',
+    hobbies: Array.isArray(user?.hobbies) ? user.hobbies : [],
+    foodPreferences: Array.isArray(user?.foodPreferences) ? user.foodPreferences : []
   })
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: '',
@@ -159,6 +164,20 @@ export default function TenantDashboard() {
   })
   const [savingProfile, setSavingProfile] = useState(false)
   const [changingPassword, setChangingPassword] = useState(false)
+  const [profilePicture, setProfilePicture] = useState(user?.profilePicture || null)
+  const [profilePicturePreview, setProfilePicturePreview] = useState(user?.profilePicture || null)
+  const [uploadingProfilePicture, setUploadingProfilePicture] = useState(false)
+  const [newHobby, setNewHobby] = useState('')
+  const [newFoodPref, setNewFoodPref] = useState('')
+  
+  // SOS Emergency state
+  const [showSOSModal, setShowSOSModal] = useState(false)
+  const [sosType, setSOSType] = useState('medical') // medical, fire, security, other
+  const [sosDescription, setSOSDescription] = useState('')
+  const [sosLocation, setSOSLocation] = useState('')
+  const [sendingSOS, setSendingSOS] = useState(false)
+  const [sosHistory, setSOSHistory] = useState([])
+  const [loadingSOSHistory, setLoadingSOSHistory] = useState(false)
   
   // Phone OTP verification state
   const [phoneChangeOTP, setPhoneChangeOTP] = useState('')
@@ -224,6 +243,10 @@ export default function TenantDashboard() {
   // Video modal state
   const [showVideoModal, setShowVideoModal] = useState(false)
   const [currentVideoUrl, setCurrentVideoUrl] = useState('')
+
+  // Panorama modal state
+  const [showPanoramaPreview, setShowPanoramaPreview] = useState(false)
+  const [panoramaPreview, setPanoramaPreview] = useState(null)
 
   // Fetch feedbacks when feedback tab is opened
   useEffect(() => {
@@ -348,8 +371,16 @@ export default function TenantDashboard() {
       setProfileForm({
         name: user.name || '',
         email: user.email || '',
-        phone: user.phone || ''
+        phone: user.phone || '',
+        displayName: user.displayName || '',
+        bio: user.bio || '',
+        hobbies: Array.isArray(user.hobbies) ? user.hobbies : [],
+        foodPreferences: Array.isArray(user.foodPreferences) ? user.foodPreferences : []
       })
+      // Set profile picture preview if exists
+      if (user.profileImage) {
+        setProfilePicturePreview(user.profileImage)
+      }
       fetchDeletionRequestStatus()
     }
   }, [user])
@@ -431,6 +462,19 @@ export default function TenantDashboard() {
     if (!bookingData.startDate) {
       setBookingMessage('Please select a start date')
       return
+    }
+
+    // Validate minimum 1 month duration if end date is provided
+    if (bookingData.endDate) {
+      const start = new Date(bookingData.startDate)
+      const end = new Date(bookingData.endDate)
+      const diffTime = Math.abs(end - start)
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+      
+      if (diffDays < 30) {
+        setBookingMessage('❌ Minimum booking duration is 1 month (30 days)')
+        return
+      }
     }
 
     try {
@@ -860,7 +904,7 @@ export default function TenantDashboard() {
     if (profileForm.phone !== user?.phone) {
       // Validate phone number
       if (!/^[0-9]{10}$/.test(profileForm.phone)) {
-        alert('Phone number must be 10 digits')
+        showToast('Phone number must be 10 digits', 'error')
         return
       }
       // Show OTP modal for phone verification
@@ -869,18 +913,52 @@ export default function TenantDashboard() {
       return
     }
     
-    // Only email can be updated without OTP (name is read-only)
     setSavingProfile(true)
     try {
-      const response = await api.put('/auth/profile', { email: profileForm.email })
-      alert('Email updated successfully!')
+      let uploadedImageUrl = null;
+
+      // Upload profile picture first if a new file was selected
+      if (profilePicture && profilePicture instanceof File) {
+        try {
+          showToast('Uploading profile photo...', 'info')
+          const photoResponse = await authAPI.uploadProfilePhoto(profilePicture)
+          if (photoResponse.data?.data?.profileImage) {
+            uploadedImageUrl = photoResponse.data.data.profileImage
+            setProfilePicturePreview(uploadedImageUrl) // Update preview with uploaded URL
+            showToast('Profile photo uploaded successfully!', 'success')
+          }
+        } catch (photoError) {
+          console.error('Error uploading profile photo:', photoError)
+          showToast(photoError.response?.data?.message || 'Failed to upload profile photo', 'error')
+          // Continue with profile update even if photo upload fails
+        }
+      }
+
+      // Update profile data
+      const updateData = {
+        email: profileForm.email,
+        displayName: profileForm.displayName,
+        bio: profileForm.bio,
+        hobbies: profileForm.hobbies,
+        foodPreferences: profileForm.foodPreferences
+      }
+
+      const response = await authAPI.updateProfile(updateData)
+      showToast('Profile updated successfully!', 'success')
+      
       // Update local user data
       if (response.data?.data) {
-        useAuthStore.getState().setUser(response.data.data)
+        // Merge the uploaded image URL if available
+        const updatedUser = {
+          ...response.data.data,
+          profileImage: uploadedImageUrl || response.data.data.profileImage
+        }
+        useAuthStore.getState().setUser(updatedUser)
+        setProfilePicture(null) // Clear the file object after successful upload
       }
     } catch (error) {
       console.error('Error updating profile:', error)
-      alert(error.response?.data?.message || 'Failed to update profile')
+      showToast(error.response?.data?.message || 'Failed to update profile', 'error')
     } finally {
       setSavingProfile(false)
     }
@@ -902,7 +980,7 @@ export default function TenantDashboard() {
   
   const handleVerifyPhoneOTP = async () => {
     if (!phoneChangeOTP || phoneChangeOTP.length !== 6) {
-      alert('Please enter a valid 6-digit OTP')
+      showToast('Please enter a valid 6-digit OTP', 'error')
       return
     }
     
@@ -933,12 +1011,12 @@ export default function TenantDashboard() {
 
   const handleChangePassword = async () => {
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      alert('New password and confirm password do not match!')
+      showToast('New password and confirm password do not match!', 'error')
       return
     }
 
     if (passwordForm.newPassword.length < 6) {
-      alert('Password must be at least 6 characters long!')
+      showToast('Password must be at least 6 characters long!', 'error')
       return
     }
 
@@ -948,7 +1026,7 @@ export default function TenantDashboard() {
         currentPassword: passwordForm.currentPassword,
         newPassword: passwordForm.newPassword
       })
-      alert('Password changed successfully!')
+      showToast('Password changed successfully!', 'success')
       setPasswordForm({
         currentPassword: '',
         newPassword: '',
@@ -956,7 +1034,7 @@ export default function TenantDashboard() {
       })
     } catch (error) {
       console.error('Error changing password:', error)
-      alert(error.response?.data?.message || 'Failed to change password')
+      showToast(error.response?.data?.message || 'Failed to change password', 'error')
     } finally {
       setChangingPassword(false)
     }
@@ -975,24 +1053,72 @@ export default function TenantDashboard() {
   
   const handleRequestDeletion = async () => {
     if (!deletionReason || deletionReason.trim().length === 0) {
-      alert('Please provide a reason for account deletion')
+      showToast('Please provide a reason for account deletion', 'error')
       return
     }
     
     setSendingDeletionRequest(true)
     try {
       const response = await tenantAPI.requestDeletion({ reason: deletionReason })
-      alert('Deletion request sent to hostel owner. You will be notified once it is reviewed.')
+      showToast('Deletion request sent to hostel owner. You will be notified once it is reviewed.', 'success')
       setDeletionRequest(response.data?.data)
       setShowDeletionModal(false)
       setDeletionReason('')
     } catch (error) {
       console.error('Error requesting deletion:', error)
-      alert(error.response?.data?.message || 'Failed to send deletion request')
+      showToast(error.response?.data?.message || 'Failed to send deletion request', 'error')
     } finally {
       setSendingDeletionRequest(false)
     }
   }
+  
+  // SOS Emergency Functions
+  const fetchSOSHistory = async () => {
+    try {
+      setLoadingSOSHistory(true)
+      const response = await tenantAPI.getSOSHistory()
+      if (response.data?.data) {
+        setSOSHistory(response.data.data)
+      }
+    } catch (error) {
+      console.error('Error fetching SOS history:', error)
+    } finally {
+      setLoadingSOSHistory(false)
+    }
+  }
+
+  const handleSendSOS = async () => {
+    if (!sosDescription.trim()) {
+      showToast('Please provide emergency details', 'error')
+      return
+    }
+
+    try {
+      setSendingSOS(true)
+      await tenantAPI.sendSOS({
+        type: sosType,
+        description: sosDescription,
+        location: sosLocation || 'Current hostel location'
+      })
+      showToast('SOS Alert sent successfully! Help is on the way.', 'success')
+      setShowSOSModal(false)
+      setSOSDescription('')
+      setSOSLocation('')
+      setSOSType('medical')
+      await fetchSOSHistory()
+    } catch (error) {
+      console.error('Error sending SOS:', error)
+      showToast(error.response?.data?.message || 'Failed to send SOS alert', 'error')
+    } finally {
+      setSendingSOS(false)
+    }
+  }
+
+  useEffect(() => {
+    if (activeTab === 'sos') {
+      fetchSOSHistory()
+    }
+  }, [activeTab])
   
   const handleCancelDeletionRequest = async () => {
     if (!confirm('Are you sure you want to cancel your deletion request?')) return
@@ -1449,6 +1575,7 @@ export default function TenantDashboard() {
     { id: 'contracts', label: 'My Contracts', icon: '📄' },
     { id: 'expenses', label: 'My Expenses', icon: '💰' },
     { id: 'feedback', label: 'Feedback', icon: '⭐' },
+    { id: 'sos', label: 'SOS Emergency', icon: '🆘' },
     { id: 'settings', label: 'Settings', icon: '⚙️' },
   ]
 
@@ -1503,7 +1630,20 @@ export default function TenantDashboard() {
           <h2 className="text-2xl font-bold text-text-dark">
             {menuItems.find((item) => item.id === activeTab)?.label}
           </h2>
-          <div className="text-text-muted">Welcome, {user?.name}</div>
+          <div className="flex items-center gap-4">
+            <div className="text-text-muted hidden md:block">Welcome, {profileForm.displayName || user?.name}</div>
+            <button
+              onClick={() => setActiveTab('settings')}
+              className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-full flex items-center justify-center font-bold text-lg hover:shadow-lg hover:scale-110 transition-all duration-300 cursor-pointer overflow-hidden border-2 border-white shadow-md"
+              title="Go to Profile"
+            >
+              {profilePicturePreview ? (
+                <img src={profilePicturePreview} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                <span>{user?.name?.charAt(0).toUpperCase() || 'U'}</span>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Content Area */}
@@ -1868,7 +2008,7 @@ export default function TenantDashboard() {
                     <div className="stats-card">
                       <p className="text-text-muted text-sm mb-2">Current Hostel</p>
                       <h3 className="text-2xl font-bold text-primary mb-2">{myBooking?.hostel?.name || 'N/A'}</h3>
-                      <p className="text-text-muted">Rent: ₹{myBooking?.rent || 'N/A'}/month</p>
+                      <p className="text-text-muted">Rent: ₹{myBooking?.monthlyRent || 'N/A'}/month</p>
                     </div>
 
                     <div className="stats-card">
@@ -1885,6 +2025,67 @@ export default function TenantDashboard() {
                       <p className="text-text-muted">Since {myBooking?.startDate ? new Date(myBooking.startDate).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' }) : 'N/A'}</p>
                     </div>
                   </div>
+
+                  {/* Profile Information Card */}
+                  {(user?.foodPreferences?.length > 0 || user?.hobbies?.length > 0 || user?.bio) && (
+                    <div className="card bg-gradient-to-br from-purple-50 to-pink-50 border-2 border-purple-200">
+                      <h3 className="text-xl font-bold mb-4 text-text-dark flex items-center gap-2">
+                        <span>👤</span>
+                        <span>Your Profile</span>
+                      </h3>
+                      
+                      {user?.bio && (
+                        <div className="mb-4">
+                          <p className="text-sm font-semibold text-gray-700 mb-1">About Me</p>
+                          <p className="text-gray-600 text-sm italic">"{user.bio}"</p>
+                        </div>
+                      )}
+
+                      <div className="grid md:grid-cols-2 gap-4">
+                        {user?.foodPreferences?.length > 0 && (
+                          <div>
+                            <p className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1">
+                              <span>🍽️</span>
+                              <span>Food Preferences</span>
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {user.foodPreferences.map((pref, idx) => (
+                                <span key={idx} className="bg-green-500 text-white px-3 py-1 rounded-full text-xs font-semibold">
+                                  {pref}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {user?.hobbies?.length > 0 && (
+                          <div>
+                            <p className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1">
+                              <span>🎯</span>
+                              <span>Hobbies & Interests</span>
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {user.hobbies.map((hobby, idx) => (
+                                <span key={idx} className="bg-purple-500 text-white px-3 py-1 rounded-full text-xs font-semibold">
+                                  {hobby}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="mt-4 pt-4 border-t border-purple-200">
+                        <button
+                          onClick={() => setActiveTab('settings')}
+                          className="text-sm text-purple-600 hover:text-purple-800 font-semibold flex items-center gap-1"
+                        >
+                          <span>✏️</span>
+                          <span>Edit Profile</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="grid md:grid-cols-2 gap-6">
                     <div className="card">
@@ -1989,7 +2190,7 @@ export default function TenantDashboard() {
                         </div>
                         <div className="text-right">
                           <p className="text-text-muted text-sm">Monthly Rent</p>
-                          <p className="text-3xl font-bold text-accent">₹{myBooking.rent || 'N/A'}</p>
+                          <p className="text-3xl font-bold text-accent">₹{myBooking.monthlyRent || 'N/A'}</p>
                         </div>
                       </div>
                     </div>
@@ -2254,10 +2455,20 @@ export default function TenantDashboard() {
                                         🎥 Video
                                       </button>
                                     )}
-                                    {room.view360Url && (
-                                      <span className="bg-purple-500 text-white text-xs px-2 py-1 rounded">
-                                        🌐 360°
-                                      </span>
+                                    {(room.panorama?.url || room.view360Url) && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          setPanoramaPreview({
+                                            file: null,
+                                            url: room.panorama?.url || room.view360Url
+                                          })
+                                          setShowPanoramaPreview(true)
+                                        }}
+                                        className="bg-purple-500 hover:bg-purple-600 text-white text-xs px-2 py-1 rounded transition cursor-pointer"
+                                      >
+                                        🎯 360° View
+                                      </button>
                                     )}
                                   </div>
                                 </>
@@ -2352,6 +2563,24 @@ export default function TenantDashboard() {
                                     )}
                                   </div>
                                 </div>
+                              )}
+
+                              {/* 360° View Button */}
+                              {(room.panorama?.url || room.view360Url) && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setPanoramaPreview({
+                                      file: null,
+                                      url: room.panorama?.url || room.view360Url
+                                    })
+                                    setShowPanoramaPreview(true)
+                                  }}
+                                  className="w-full bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white py-2 rounded-lg font-semibold transition text-sm flex items-center justify-center gap-2 mb-2"
+                                >
+                                  <span>🎯</span>
+                                  <span>View 360° Tour</span>
+                                </button>
                               )}
 
                               {/* Book Button */}
@@ -2999,7 +3228,7 @@ export default function TenantDashboard() {
                                 </div>
                                 <div className="flex justify-between">
                                   <span className="text-text-muted">Type:</span>
-                                  <span className="font-semibold text-text-dark capitalize">{contract.room?.type || 'N/A'}</span>
+                                  <span className="font-semibold text-text-dark capitalize">{contract.room?.roomType || 'N/A'}</span>
                                 </div>
                                 <div className="flex justify-between">
                                   <span className="text-text-muted">Capacity:</span>
@@ -3642,6 +3871,120 @@ export default function TenantDashboard() {
             </div>
           )}
 
+          {activeTab === 'sos' && (
+            <div className="space-y-6">
+              {/* SOS Emergency Alert */}
+              <div className="card bg-gradient-to-br from-red-50 to-orange-50 border-2 border-red-300">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="text-5xl">🆘</div>
+                  <div>
+                    <h3 className="text-3xl font-bold text-red-700">Emergency SOS</h3>
+                    <p className="text-gray-600 mt-1">Send urgent alerts to hostel management</p>
+                  </div>
+                </div>
+
+                {/* Quick SOS Button */}
+                <div className="mb-8 p-6 bg-white rounded-xl shadow-lg border-2 border-red-400">
+                  <button
+                    onClick={() => setShowSOSModal(true)}
+                    className="w-full bg-gradient-to-r from-red-600 to-red-700 text-white text-xl font-bold py-6 px-8 rounded-xl hover:from-red-700 hover:to-red-800 transform hover:scale-[1.02] transition-all duration-200 shadow-xl flex items-center justify-center gap-3"
+                  >
+                    <span className="text-3xl">🚨</span>
+                    <span>SEND EMERGENCY ALERT</span>
+                    <span className="text-3xl">🚨</span>
+                  </button>
+                  <p className="text-center text-gray-600 mt-4 text-sm">
+                    Click here if you need immediate assistance for medical, fire, security, or other emergencies
+                  </p>
+                </div>
+
+                {/* Emergency Types Info */}
+                <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+                  <div className="bg-white p-4 rounded-lg border-2 border-blue-200">
+                    <div className="text-3xl mb-2">🏥</div>
+                    <h4 className="font-bold text-blue-700 mb-1">Medical</h4>
+                    <p className="text-xs text-gray-600">Health emergencies, injuries, illness</p>
+                  </div>
+                  <div className="bg-white p-4 rounded-lg border-2 border-orange-200">
+                    <div className="text-3xl mb-2">🔥</div>
+                    <h4 className="font-bold text-orange-700 mb-1">Fire</h4>
+                    <p className="text-xs text-gray-600">Fire hazards, smoke, burning smell</p>
+                  </div>
+                  <div className="bg-white p-4 rounded-lg border-2 border-purple-200">
+                    <div className="text-3xl mb-2">🔒</div>
+                    <h4 className="font-bold text-purple-700 mb-1">Security</h4>
+                    <p className="text-xs text-gray-600">Safety threats, suspicious activity</p>
+                  </div>
+                  <div className="bg-white p-4 rounded-lg border-2 border-gray-200">
+                    <div className="text-3xl mb-2">⚠️</div>
+                    <h4 className="font-bold text-gray-700 mb-1">Other</h4>
+                    <p className="text-xs text-gray-600">Infrastructure, plumbing, electrical</p>
+                  </div>
+                </div>
+
+                {/* SOS History */}
+                <div className="bg-white rounded-xl p-6 border-2 border-gray-200">
+                  <h4 className="text-xl font-bold mb-4 flex items-center gap-2">
+                    📋 <span>Emergency Alert History</span>
+                  </h4>
+                  
+                  {loadingSOSHistory ? (
+                    <div className="text-center py-8">
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600 mx-auto"></div>
+                      <p className="text-gray-600 mt-4">Loading history...</p>
+                    </div>
+                  ) : sosHistory.length === 0 ? (
+                    <div className="text-center py-8">
+                      <div className="text-6xl mb-4">✅</div>
+                      <p className="text-gray-600">No emergency alerts sent yet</p>
+                      <p className="text-sm text-gray-500 mt-2">Hope you never need to use this!</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {sosHistory.map((sos, index) => (
+                        <div key={index} className="bg-gray-50 p-4 rounded-lg border-l-4 border-red-500">
+                          <div className="flex justify-between items-start mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-2xl">
+                                {sos.type === 'medical' ? '🏥' : 
+                                 sos.type === 'fire' ? '🔥' : 
+                                 sos.type === 'security' ? '🔒' : '⚠️'}
+                              </span>
+                              <span className="font-bold text-gray-800 capitalize">{sos.type} Emergency</span>
+                            </div>
+                            <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                              sos.status === 'resolved' ? 'bg-green-100 text-green-700' :
+                              sos.status === 'in-progress' ? 'bg-yellow-100 text-yellow-700' :
+                              'bg-red-100 text-red-700'
+                            }`}>
+                              {sos.status === 'resolved' ? '✓ Resolved' :
+                               sos.status === 'in-progress' ? '⏳ In Progress' :
+                               '🚨 Active'}
+                            </span>
+                          </div>
+                          <p className="text-gray-700 mb-2">{sos.description}</p>
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-gray-500">📍 {sos.location}</span>
+                            <span className="text-gray-500">
+                              {new Date(sos.createdAt).toLocaleString()}
+                            </span>
+                          </div>
+                          {sos.response && (
+                            <div className="mt-3 pt-3 border-t border-gray-300">
+                              <p className="text-sm text-gray-600">
+                                <span className="font-semibold">Response:</span> {sos.response}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {activeTab === 'settings' && (
             <div className="space-y-6">
               {/* Profile Settings */}
@@ -3650,50 +3993,342 @@ export default function TenantDashboard() {
                   👤 Profile Settings
                 </h3>
                 
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">Full Name</label>
-                    <input
-                      type="text"
-                      value={profileForm.name}
-                      readOnly
-                      className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg bg-gray-100 cursor-not-allowed"
-                      placeholder="Enter your full name"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">Name cannot be changed</p>
+                <div className="space-y-6">
+                  {/* Profile Picture Section */}
+                  <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 border-2 border-blue-200">
+                    <label className="block text-sm font-bold text-gray-800 mb-4">Profile Picture</label>
+                    <div className="flex items-center gap-6">
+                      <div className="relative">
+                        <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-white shadow-lg bg-gradient-to-br from-blue-500 to-indigo-600">
+                          {profilePicturePreview ? (
+                            <img src={profilePicturePreview} alt="Profile" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-white text-4xl font-bold">
+                              {user?.name?.charAt(0).toUpperCase() || 'U'}
+                            </div>
+                          )}
+                        </div>
+                        <input
+                          type="file"
+                          id="profile-picture-upload"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files[0]
+                            if (file) {
+                              setProfilePicture(file)
+                              const reader = new FileReader()
+                              reader.onloadend = () => setProfilePicturePreview(reader.result)
+                              reader.readAsDataURL(file)
+                            }
+                          }}
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm text-gray-600 mb-3">Upload a profile picture to personalize your account</p>
+                        <div className="flex gap-3">
+                          <label
+                            htmlFor="profile-picture-upload"
+                            className="px-4 py-2 bg-primary text-white rounded-lg font-semibold hover:bg-blue-700 transition cursor-pointer"
+                          >
+                            📷 Choose Photo
+                          </label>
+                          {profilePicturePreview && (
+                            <button
+                              onClick={() => {
+                                setProfilePicture(null)
+                                setProfilePicturePreview(null)
+                              }}
+                              className="px-4 py-2 bg-red-500 text-white rounded-lg font-semibold hover:bg-red-600 transition"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Full Name</label>
+                      <input
+                        type="text"
+                        value={profileForm.name}
+                        readOnly
+                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg bg-gray-100 cursor-not-allowed"
+                        placeholder="Enter your full name"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Legal name cannot be changed</p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Display Name</label>
+                      <input
+                        type="text"
+                        value={profileForm.displayName}
+                        onChange={(e) => setProfileForm({ ...profileForm, displayName: e.target.value })}
+                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-primary focus:outline-none"
+                        placeholder="How others see your name"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">This is how you'll appear to others</p>
+                    </div>
+                  </div>
+
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Email Address</label>
+                      <input
+                        type="email"
+                        value={profileForm.email}
+                        onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
+                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-primary focus:outline-none"
+                        placeholder="Enter your email"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Phone Number</label>
+                      <input
+                        type="tel"
+                        value={profileForm.phone}
+                        onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
+                        className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-primary focus:outline-none"
+                        placeholder="Enter your phone number"
+                        maxLength="10"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Bio Section */}
                   <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">Email Address</label>
-                    <input
-                      type="email"
-                      value={profileForm.email}
-                      onChange={(e) => handleProfileFormChange('email', e.target.value)}
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Bio / About Me</label>
+                    <textarea
+                      value={profileForm.bio}
+                      onChange={(e) => setProfileForm({ ...profileForm, bio: e.target.value })}
                       className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-primary focus:outline-none"
-                      placeholder="Enter your email"
+                      placeholder="Tell others about yourself..."
+                      rows="4"
+                      maxLength="500"
                     />
+                    <p className="text-xs text-gray-500 mt-1">{(profileForm.bio || '').length}/500 characters</p>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">Phone Number</label>
-                    <input
-                      type="tel"
-                      value={profileForm.phone}
-                      onChange={(e) => handleProfileFormChange('phone', e.target.value)}
-                      className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-primary focus:outline-none"
-                      placeholder="Enter your phone number"
-                      maxLength="10"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">Changing phone number requires OTP verification</p>
+                  {/* Food Preferences */}
+                  <div className="bg-green-50 rounded-xl p-6 border-2 border-green-200">
+                    <label className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
+                      🍽️ Food Preferences
+                    </label>
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {Array.isArray(profileForm.foodPreferences) && profileForm.foodPreferences.map((pref, idx) => (
+                        <span key={idx} className="bg-green-500 text-white px-3 py-1 rounded-full text-sm font-semibold flex items-center gap-2">
+                          {pref}
+                          <button
+                            onClick={() => setProfileForm({
+                              ...profileForm,
+                              foodPreferences: profileForm.foodPreferences.filter((_, i) => i !== idx)
+                            })}
+                            className="hover:bg-green-600 rounded-full px-1"
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          if (e.target.value && !profileForm.foodPreferences.includes(e.target.value)) {
+                            setProfileForm({
+                              ...profileForm,
+                              foodPreferences: [...profileForm.foodPreferences, e.target.value]
+                            })
+                          }
+                        }}
+                        className="flex-1 px-4 py-2 border-2 border-green-300 rounded-lg focus:border-green-500 focus:outline-none bg-white"
+                      >
+                        <option value="">Select a food preference...</option>
+                        <option value="Vegetarian">🥗 Vegetarian</option>
+                        <option value="Non-Vegetarian">🍖 Non-Vegetarian</option>
+                        <option value="Vegan">🌱 Vegan</option>
+                        <option value="Jain">🙏 Jain</option>
+                        <option value="Eggetarian">🥚 Eggetarian</option>
+                        <option value="Halal">☪️ Halal</option>
+                        <option value="Kosher">✡️ Kosher</option>
+                        <option value="Gluten-Free">🌾 Gluten-Free</option>
+                        <option value="Dairy-Free">🥛 Dairy-Free</option>
+                        <option value="No Restrictions">✅ No Restrictions</option>
+                      </select>
+                      <button
+                        onClick={() => {
+                          if (newFoodPref.trim() && !profileForm.foodPreferences.includes(newFoodPref.trim())) {
+                            setProfileForm({
+                              ...profileForm,
+                              foodPreferences: [...profileForm.foodPreferences, newFoodPref.trim()]
+                            })
+                            setNewFoodPref('')
+                          }
+                        }}
+                        className="px-4 py-2 bg-green-500 text-white rounded-lg font-semibold hover:bg-green-600 transition whitespace-nowrap"
+                      >
+                        + Custom
+                      </button>
+                    </div>
+                    {newFoodPref && (
+                      <div className="mt-2">
+                        <input
+                          type="text"
+                          value={newFoodPref}
+                          onChange={(e) => setNewFoodPref(e.target.value)}
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter' && newFoodPref.trim()) {
+                              setProfileForm({
+                                ...profileForm,
+                                foodPreferences: [...profileForm.foodPreferences, newFoodPref.trim()]
+                              })
+                              setNewFoodPref('')
+                            }
+                          }}
+                          className="w-full px-4 py-2 border-2 border-green-300 rounded-lg focus:border-green-500 focus:outline-none"
+                          placeholder="Enter custom food preference..."
+                          autoFocus
+                        />
+                      </div>
+                    )}
                   </div>
 
-                  <button
-                    onClick={handleUpdateProfile}
-                    disabled={savingProfile}
-                    className="btn-primary disabled:opacity-50"
-                  >
-                    {savingProfile ? 'Saving...' : 'Save Profile'}
-                  </button>
+                  {/* Hobbies Section */}
+                  <div className="bg-purple-50 rounded-xl p-6 border-2 border-purple-200">
+                    <label className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
+                      🎯 Hobbies & Interests
+                    </label>
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {Array.isArray(profileForm.hobbies) && profileForm.hobbies.map((hobby, idx) => (
+                        <span key={idx} className="bg-purple-500 text-white px-3 py-1 rounded-full text-sm font-semibold flex items-center gap-2">
+                          {hobby}
+                          <button
+                            onClick={() => setProfileForm({
+                              ...profileForm,
+                              hobbies: profileForm.hobbies.filter((_, i) => i !== idx)
+                            })}
+                            className="hover:bg-purple-600 rounded-full px-1"
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          if (e.target.value && !profileForm.hobbies.includes(e.target.value)) {
+                            setProfileForm({
+                              ...profileForm,
+                              hobbies: [...profileForm.hobbies, e.target.value]
+                            })
+                          }
+                        }}
+                        className="flex-1 px-4 py-2 border-2 border-purple-300 rounded-lg focus:border-purple-500 focus:outline-none bg-white"
+                      >
+                        <option value="">Select a hobby or interest...</option>
+                        <option value="Reading">📚 Reading</option>
+                        <option value="Writing">✍️ Writing</option>
+                        <option value="Gaming">🎮 Gaming</option>
+                        <option value="Sports">⚽ Sports</option>
+                        <option value="Music">🎵 Music</option>
+                        <option value="Dancing">💃 Dancing</option>
+                        <option value="Painting">🎨 Painting</option>
+                        <option value="Photography">📷 Photography</option>
+                        <option value="Cooking">👨‍🍳 Cooking</option>
+                        <option value="Traveling">✈️ Traveling</option>
+                        <option value="Fitness">💪 Fitness</option>
+                        <option value="Yoga">🧘 Yoga</option>
+                        <option value="Meditation">🧘‍♀️ Meditation</option>
+                        <option value="Movies">🎬 Movies</option>
+                        <option value="TV Shows">📺 TV Shows</option>
+                        <option value="Anime">🎌 Anime</option>
+                        <option value="Technology">💻 Technology</option>
+                        <option value="Coding">👨‍💻 Coding</option>
+                        <option value="Gardening">🌱 Gardening</option>
+                        <option value="Cycling">🚴 Cycling</option>
+                        <option value="Swimming">🏊 Swimming</option>
+                        <option value="Chess">♟️ Chess</option>
+                        <option value="Board Games">🎲 Board Games</option>
+                        <option value="Volunteering">🤝 Volunteering</option>
+                        <option value="Fashion">👗 Fashion</option>
+                      </select>
+                      <button
+                        onClick={() => {
+                          if (newHobby.trim() && !profileForm.hobbies.includes(newHobby.trim())) {
+                            setProfileForm({
+                              ...profileForm,
+                              hobbies: [...profileForm.hobbies, newHobby.trim()]
+                            })
+                            setNewHobby('')
+                          }
+                        }}
+                        className="px-4 py-2 bg-purple-500 text-white rounded-lg font-semibold hover:bg-purple-600 transition whitespace-nowrap"
+                      >
+                        + Custom
+                      </button>
+                    </div>
+                    {newHobby && (
+                      <div className="mt-2">
+                        <input
+                          type="text"
+                          value={newHobby}
+                          onChange={(e) => setNewHobby(e.target.value)}
+                          onKeyPress={(e) => {
+                            if (e.key === 'Enter' && newHobby.trim()) {
+                              setProfileForm({
+                                ...profileForm,
+                                hobbies: [...profileForm.hobbies, newHobby.trim()]
+                              })
+                              setNewHobby('')
+                            }
+                          }}
+                          className="w-full px-4 py-2 border-2 border-purple-300 rounded-lg focus:border-purple-500 focus:outline-none"
+                          placeholder="Enter custom hobby or interest..."
+                          autoFocus
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-6 border-2 border-blue-200">
+                    <div className="flex items-center gap-4 mb-4">
+                      <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
+                        <span className="text-2xl">💾</span>
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="font-bold text-gray-800 text-lg">Ready to Update Your Profile?</h4>
+                        <p className="text-sm text-gray-600">Save all your changes to update your profile information</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleUpdateProfile}
+                      disabled={savingProfile}
+                      className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg transition-all duration-300 ${
+                        savingProfile 
+                          ? 'bg-gray-400 cursor-not-allowed' 
+                          : 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 hover:shadow-xl hover:scale-105'
+                      } text-white flex items-center justify-center gap-3`}
+                    >
+                      {savingProfile ? (
+                        <>
+                          <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
+                          <span>Saving Profile...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-2xl">✓</span>
+                          <span>Save All Changes</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -3999,6 +4634,26 @@ export default function TenantDashboard() {
                     </div>
                   </div>
                 )}
+
+                {/* View 360 Button */}
+                {(selectedRoom.panorama?.url || selectedRoom.view360Url) && (
+                  <div className="mt-4 pt-3 border-t">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPanoramaPreview({
+                          file: null,
+                          url: selectedRoom.panorama?.url || selectedRoom.view360Url
+                        })
+                        setShowPanoramaPreview(true)
+                      }}
+                      className="w-full bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white py-3 px-4 rounded-lg font-semibold transition flex items-center justify-center gap-2 shadow-md"
+                    >
+                      <span className="text-xl">🎯</span>
+                      <span>View 360° Room Tour</span>
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Booking Form */}
@@ -4024,12 +4679,12 @@ export default function TenantDashboard() {
                   </label>
                   <input
                     type="date"
-                    min={bookingData.startDate || new Date().toISOString().split('T')[0]}
+                    min={bookingData.startDate ? new Date(new Date(bookingData.startDate).setMonth(new Date(bookingData.startDate).getMonth() + 1)).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]}
                     value={bookingData.endDate}
                     onChange={(e) => setBookingData({ ...bookingData, endDate: e.target.value })}
                     className="input w-full"
                   />
-                  <p className="text-xs text-gray-500 mt-1">Leave empty for 11-month default lease</p>
+                  <p className="text-xs text-gray-500 mt-1">Leave empty for 11-month default lease. Minimum 1 month required.</p>
                 </div>
 
                 <div>
@@ -5708,6 +6363,192 @@ export default function TenantDashboard() {
                 >
                   {sendingDeletionRequest ? 'Sending Request...' : 'Send Request'}
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 360° Panorama Viewer Modal */}
+      {showPanoramaPreview && panoramaPreview && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="flex justify-between items-center p-6 border-b">
+              <div>
+                <h3 className="text-2xl font-semibold text-gray-800">🎯 360° Room Tour</h3>
+                <p className="text-sm text-gray-600 mt-1">Interactive panoramic view</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPanoramaPreview(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Viewer Container */}
+            <div className="flex-1 p-6 bg-gray-900">
+              <PanoramaViewer 
+                panoramaUrl={panoramaPreview.url}
+                width="100%"
+                height="600px"
+                autoRotate={true}
+                showControls={true}
+              />
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-6 border-t bg-gray-50">
+              <div className="text-sm text-gray-600">
+                <p className="font-medium mb-1">Controls:</p>
+                <p>🖊️ Drag to look around • 🔍 Scroll to zoom • 🔁 Auto-rotate enabled</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SOS Emergency Modal */}
+      {showSOSModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-8 border-4 border-red-500">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <span className="text-5xl">🆘</span>
+                <h3 className="text-3xl font-bold text-red-700">Emergency SOS Alert</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setShowSOSModal(false)
+                  setSosDescription('')
+                  setSosLocation('')
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="h-8 w-8" />
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              {/* Emergency Type Selection */}
+              <div>
+                <label className="block text-lg font-bold text-gray-800 mb-3">Emergency Type *</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => setSOSType('medical')}
+                    className={`p-4 rounded-lg border-2 transition-all ${
+                      sosType === 'medical'
+                        ? 'bg-blue-100 border-blue-500 ring-2 ring-blue-300'
+                        : 'bg-white border-gray-300 hover:border-blue-400'
+                    }`}
+                  >
+                    <div className="text-3xl mb-2">🏥</div>
+                    <div className="font-bold text-blue-700">Medical</div>
+                  </button>
+                  <button
+                    onClick={() => setSOSType('fire')}
+                    className={`p-4 rounded-lg border-2 transition-all ${
+                      sosType === 'fire'
+                        ? 'bg-orange-100 border-orange-500 ring-2 ring-orange-300'
+                        : 'bg-white border-gray-300 hover:border-orange-400'
+                    }`}
+                  >
+                    <div className="text-3xl mb-2">🔥</div>
+                    <div className="font-bold text-orange-700">Fire</div>
+                  </button>
+                  <button
+                    onClick={() => setSOSType('security')}
+                    className={`p-4 rounded-lg border-2 transition-all ${
+                      sosType === 'security'
+                        ? 'bg-purple-100 border-purple-500 ring-2 ring-purple-300'
+                        : 'bg-white border-gray-300 hover:border-purple-400'
+                    }`}
+                  >
+                    <div className="text-3xl mb-2">🔒</div>
+                    <div className="font-bold text-purple-700">Security</div>
+                  </button>
+                  <button
+                    onClick={() => setSOSType('other')}
+                    className={`p-4 rounded-lg border-2 transition-all ${
+                      sosType === 'other'
+                        ? 'bg-gray-100 border-gray-500 ring-2 ring-gray-300'
+                        : 'bg-white border-gray-300 hover:border-gray-400'
+                    }`}
+                  >
+                    <div className="text-3xl mb-2">⚠️</div>
+                    <div className="font-bold text-gray-700">Other</div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-lg font-bold text-gray-800 mb-3">Emergency Details *</label>
+                <textarea
+                  value={sosDescription}
+                  onChange={(e) => setSOSDescription(e.target.value)}
+                  placeholder="Describe the emergency situation in detail..."
+                  className="w-full p-4 border-2 border-gray-300 rounded-lg focus:border-red-500 focus:ring-2 focus:ring-red-200 outline-none resize-none"
+                  rows="4"
+                />
+              </div>
+
+              {/* Location */}
+              <div>
+                <label className="block text-lg font-bold text-gray-800 mb-3">Specific Location (Optional)</label>
+                <input
+                  type="text"
+                  value={sosLocation}
+                  onChange={(e) => setSOSLocation(e.target.value)}
+                  placeholder="e.g., Room 203, Ground Floor Corridor, etc."
+                  className="w-full p-4 border-2 border-gray-300 rounded-lg focus:border-red-500 focus:ring-2 focus:ring-red-200 outline-none"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-4 pt-4">
+                <button
+                  onClick={() => {
+                    setShowSOSModal(false)
+                    setSOSDescription('')
+                    setSOSLocation('')
+                  }}
+                  className="flex-1 bg-gray-200 text-gray-700 font-bold py-4 px-6 rounded-xl hover:bg-gray-300 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSendSOS}
+                  disabled={sendingSOS || !sosDescription.trim()}
+                  className="flex-1 bg-gradient-to-r from-red-600 to-red-700 text-white font-bold py-4 px-6 rounded-xl hover:from-red-700 hover:to-red-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-[1.02] shadow-xl flex items-center justify-center gap-2"
+                >
+                  {sendingSOS ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                      <span>Sending Alert...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-2xl">🚨</span>
+                      <span>SEND EMERGENCY ALERT</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Important Notice */}
+              <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4">
+                <p className="text-sm text-yellow-800 flex items-start gap-2">
+                  <span className="text-xl">⚠️</span>
+                  <span>
+                    <strong>Important:</strong> This will immediately alert hostel management. 
+                    Please only use this for genuine emergencies.
+                  </span>
+                </p>
               </div>
             </div>
           </div>

@@ -110,6 +110,13 @@ export const authAPI = {
   },
   getProfile: () => api.get('/auth/profile'),
   updateProfile: (data) => api.put('/auth/profile', data),
+  uploadProfilePhoto: (file) => {
+    const formData = new FormData()
+    formData.append('profilePhoto', file)
+    return api.post('/auth/upload-profile-photo', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  },
 }
 
 // Hostel API calls
@@ -193,6 +200,8 @@ export const tenantAPI = {
   requestDeletion: (data) => api.post('/tenant/deletion-request', data),
   getDeletionRequest: () => api.get('/tenant/deletion-request'),
   cancelDeletionRequest: (id) => api.delete(`/tenant/deletion-request/${id}`),
+  sendSOS: (data) => api.post('/tenant/sos', data),
+  getSOSHistory: () => api.get('/tenant/sos/history'),
 }
 
 // Owner API calls

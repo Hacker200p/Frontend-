@@ -3,6 +3,7 @@ const generateToken = require('../utils/generateToken');
 const sendEmail = require('../utils/sendEmail');
 const sendSMS = require('../utils/sendSMS');
 const generateOTP = require('../utils/generateOTP');
+const cloudinary = require('../config/cloudinary');
 
 // Register new user - Now sends OTP for verification
 // @route   POST /api/auth/register
@@ -195,6 +196,13 @@ const verifyOTP = async (req, res) => {
           email: user.email,
           phone: user.phone,
           role: user.role,
+          profileImage: user.profileImage,
+          displayName: user.displayName,
+          bio: user.bio,
+          hobbies: user.hobbies,
+          foodPreferences: user.foodPreferences,
+          isVerified: user.isVerified,
+          phoneVerified: user.phoneVerified,
         },
         token: token,
       },
@@ -293,6 +301,13 @@ const login = async (req, res) => {
           email: user.email,
           phone: user.phone,
           role: user.role,
+          profileImage: user.profileImage,
+          displayName: user.displayName,
+          bio: user.bio,
+          hobbies: user.hobbies,
+          foodPreferences: user.foodPreferences,
+          isVerified: user.isVerified,
+          phoneVerified: user.phoneVerified,
         },
       },
     });
@@ -318,13 +333,14 @@ const getMe = async (req, res) => {
 // @access  Private
 const updateProfile = async (req, res) => {
   try {
-    const { name, email, phone, foodPreference, bio, addressString, city, state } = req.body;
+    const { name, email, phone, foodPreference, bio, addressString, city, state, displayName, hobbies, foodPreferences } = req.body;
 
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ success: false, message: 'User not found' });
 
     // Update name if provided
     if (name) user.name = name;
+    if (typeof displayName !== 'undefined') user.displayName = displayName;
 
     // Update email with uniqueness check
     if (email && email !== user.email) {
@@ -352,6 +368,8 @@ const updateProfile = async (req, res) => {
     if (typeof addressString !== 'undefined') user.addressString = addressString;
     if (typeof city !== 'undefined') user.city = city;
     if (typeof state !== 'undefined') user.state = state;
+    if (hobbies !== undefined) user.hobbies = Array.isArray(hobbies) ? hobbies : [];
+    if (foodPreferences !== undefined) user.foodPreferences = Array.isArray(foodPreferences) ? foodPreferences : [];
 
     await user.save();
 
@@ -548,6 +566,75 @@ const changePassword = async (req, res) => {
   }
 };
 
+// @desc    Upload profile photo
+// @route   POST /api/auth/upload-profile-photo
+// @access  Private (All authenticated users)
+const uploadProfilePhoto = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No file uploaded' });
+    }
+
+    console.log('Uploading profile photo for user:', user.email);
+    console.log('File details:', { mimetype: req.file.mimetype, size: req.file.size });
+
+    // Delete old profile image from cloudinary if exists
+    if (user.profileImage && user.profileImage.includes('cloudinary')) {
+      try {
+        const urlParts = user.profileImage.split('/');
+        const publicIdWithExt = urlParts[urlParts.length - 1];
+        const publicId = publicIdWithExt.split('.')[0];
+        await cloudinary.uploader.destroy(`profile_photos/${publicId}`);
+        console.log('Old profile image deleted');
+      } catch (err) {
+        console.error('Error deleting old profile image:', err);
+        // Continue with upload even if deletion fails
+      }
+    }
+
+    // Upload new image to cloudinary from buffer
+    const b64 = Buffer.from(req.file.buffer).toString('base64');
+    const dataURI = `data:${req.file.mimetype};base64,${b64}`;
+    
+    console.log('Uploading to Cloudinary...');
+    const result = await new Promise((resolve, reject) => {
+      cloudinary.uploader.upload(dataURI, {
+        folder: 'profile_photos',
+        resource_type: 'image',
+        transformation: [
+          { width: 500, height: 500, crop: 'fill', gravity: 'face' },
+          { quality: 'auto', fetch_format: 'auto' }
+        ]
+      }, (error, result) => {
+        if (error) reject(error);
+        else resolve(result);
+      });
+    });
+
+    console.log('Upload successful:', result.secure_url);
+
+    user.profileImage = result.secure_url;
+    await user.save();
+
+    res.json({ 
+      success: true, 
+      message: 'Profile photo uploaded successfully',
+      data: { profileImage: result.secure_url } 
+    });
+  } catch (error) {
+    console.error('Upload profile photo error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: error.message || 'Failed to upload profile photo' 
+    });
+  }
+};
+
 module.exports = { 
   register, 
   login, 
@@ -558,5 +645,6 @@ module.exports = {
   refreshTokenController,
   sendPhoneChangeOTP,
   verifyPhoneChangeOTP,
-  changePassword
+  changePassword,
+  uploadProfilePhoto
 };

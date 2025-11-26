@@ -46,6 +46,8 @@ export default function OwnerDashboard() {
   })
   const [profileLoading, setProfileLoading] = useState(false)
   const [profileMessage, setProfileMessage] = useState('')
+  const [profilePicture, setProfilePicture] = useState(null)
+  const [profilePicturePreview, setProfilePicturePreview] = useState(null)
 
   useEffect(() => {
     let mounted = true
@@ -64,6 +66,9 @@ export default function OwnerDashboard() {
           city: u.city || '',
           state: u.state || '',
         }))
+        if (u.profileImage) {
+          setProfilePicturePreview(u.profileImage)
+        }
       } catch (err) {
         // silent
       }
@@ -142,6 +147,17 @@ export default function OwnerDashboard() {
   // Panorama preview state
   const [panoramaPreview, setPanoramaPreview] = useState(null) // { file, url }
   const [showPanoramaPreview, setShowPanoramaPreview] = useState(false)
+
+  // Confirmation modal state
+  const [showConfirmModal, setShowConfirmModal] = useState(false)
+  const [confirmModalData, setConfirmModalData] = useState({ title: '', message: '', onConfirm: null, type: 'approve' })
+
+  // Toast notification state
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' })
+  const showToast = (message, type = 'success') => {
+    setToast({ show: true, message, type })
+    setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000)
+  }
 
   // Preset amenity options
   const amenityOptions = [
@@ -340,38 +356,46 @@ export default function OwnerDashboard() {
   }
 
   const handleApproveTenant = async (contractId) => {
-    if (!confirm('Are you sure you want to approve this booking? The tenant will be notified.')) {
-      return
-    }
-    
-    try {
-      await ownerAPI.approveTenantContract(contractId)
-      alert('Booking approved successfully!')
-      await fetchTenants() // Refresh tenant list
-    } catch (error) {
-      alert(error.response?.data?.message || 'Failed to approve booking')
-    }
+    setConfirmModalData({
+      title: 'Approve Booking',
+      message: 'Are you sure you want to approve this booking? The tenant will be notified via email and SMS.',
+      onConfirm: async () => {
+        try {
+          await ownerAPI.approveTenantContract(contractId)
+          showToast('Booking approved successfully! Tenant has been notified.', 'success')
+          await fetchTenants() // Refresh tenant list
+        } catch (error) {
+          showToast(error.response?.data?.message || 'Failed to approve booking', 'error')
+        }
+      },
+      type: 'approve'
+    })
+    setShowConfirmModal(true)
   }
 
   const handleTerminateTenant = async (contractId) => {
-    if (!confirm('Are you sure you want to terminate this tenant contract? This will make the room available again.')) {
-      return
-    }
-    
-    try {
-      await ownerAPI.terminateTenantContract(contractId)
-      alert('Contract terminated successfully')
-      
-      // Refresh data without affecting hostels list
-      await fetchTenants()
-      
-      // Refresh rooms for all hostels
-      if (hostels && hostels.length > 0) {
-        await fetchAllRooms(hostels)
-      }
-    } catch (error) {
-      alert(error.response?.data?.message || 'Failed to terminate contract')
-    }
+    setConfirmModalData({
+      title: 'Terminate Contract',
+      message: 'Are you sure you want to terminate this tenant contract? This action will make the room available again and notify the tenant.',
+      onConfirm: async () => {
+        try {
+          await ownerAPI.terminateTenantContract(contractId)
+          showToast('Contract terminated successfully. Room is now available.', 'success')
+          
+          // Refresh data without affecting hostels list
+          await fetchTenants()
+          
+          // Refresh rooms for all hostels
+          if (hostels && hostels.length > 0) {
+            await fetchAllRooms(hostels)
+          }
+        } catch (error) {
+          showToast(error.response?.data?.message || 'Failed to terminate contract', 'error')
+        }
+      },
+      type: 'terminate'
+    })
+    setShowConfirmModal(true)
   }
 
   const fetchAllRooms = async (hostelList) => {
@@ -485,7 +509,22 @@ export default function OwnerDashboard() {
           <h2 className="text-2xl font-bold text-text-dark">
             {menuItems.find((item) => item.id === activeTab)?.label}
           </h2>
-          <div className="text-text-muted">Welcome, {user?.name}</div>
+          <div className="flex items-center gap-3">
+            <div className="text-text-muted">Welcome, {user?.name}</div>
+            <div 
+              className="w-10 h-10 rounded-full overflow-hidden border-2 border-primary shadow-md bg-gradient-to-br from-blue-500 to-indigo-600 cursor-pointer hover:scale-105 transition-transform"
+              onClick={() => setActiveTab('profile')}
+              title="View Profile"
+            >
+              {profilePicturePreview || user?.profileImage ? (
+                <img src={profilePicturePreview || user?.profileImage} alt="Profile" className="w-full h-full object-cover" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-white text-lg font-bold">
+                  {user?.name?.charAt(0).toUpperCase() || 'O'}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Content Area */}
@@ -1293,27 +1332,44 @@ export default function OwnerDashboard() {
                 </div>
               )}
 
-              <div className="card">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="text-2xl font-bold text-text-dark">Tenant Management</h3>
-                  <div className="flex items-center gap-4">
-                    <select
-                      value={selectedTenantHostel}
-                      onChange={(e) => setSelectedTenantHostel(e.target.value)}
-                      className="input"
-                    >
-                      <option value="all">All Hostels</option>
-                      {hostels.map((h) => (
-                        <option key={h._id} value={h._id}>{h.name}</option>
-                      ))}
-                    </select>
-                    <input
-                      type="text"
-                      placeholder="Search by name or email..."
-                      value={tenantSearchQuery}
-                      onChange={(e) => setTenantSearchQuery(e.target.value)}
-                      className="input"
-                    />
+              <div className="card bg-gradient-to-br from-white to-blue-50 border-2 border-blue-100">
+                <div className="mb-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
+                      <span className="text-2xl">👥</span>
+                    </div>
+                    <div>
+                      <h3 className="text-3xl font-bold text-gray-800">Tenant Management</h3>
+                      <p className="text-sm text-gray-600">Monitor and manage your tenant contracts</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3 mt-4">
+                    <div className="flex-1 min-w-[200px]">
+                      <label className="text-xs font-semibold text-gray-600 mb-1 block">Filter by Hostel</label>
+                      <select
+                        value={selectedTenantHostel}
+                        onChange={(e) => setSelectedTenantHostel(e.target.value)}
+                        className="w-full px-4 py-2.5 border-2 border-gray-300 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition"
+                      >
+                        <option value="all">🏢 All Hostels</option>
+                        {hostels.map((h) => (
+                          <option key={h._id} value={h._id}>🏨 {h.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex-1 min-w-[250px]">
+                      <label className="text-xs font-semibold text-gray-600 mb-1 block">Search Tenants</label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Search by name or email..."
+                          value={tenantSearchQuery}
+                          onChange={(e) => setTenantSearchQuery(e.target.value)}
+                          className="w-full pl-10 pr-4 py-2.5 border-2 border-gray-300 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition"
+                        />
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -1325,123 +1381,162 @@ export default function OwnerDashboard() {
                     </div>
                   </div>
                 ) : tenants.length === 0 ? (
-                  <div className="text-center py-12">
-                    <div className="text-6xl mb-4">👥</div>
-                    <h3 className="text-xl font-bold text-text-dark mb-2">No Tenants Yet</h3>
-                    <p className="text-text-muted">You don't have any active tenants at the moment.</p>
+                  <div className="text-center py-16 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl border-2 border-dashed border-blue-200">
+                    <div className="text-7xl mb-4">👥</div>
+                    <h3 className="text-2xl font-bold text-gray-800 mb-2">No Tenants Yet</h3>
+                    <p className="text-gray-600 mb-4">You don't have any active tenants at the moment.</p>
+                    <p className="text-sm text-gray-500">Tenants will appear here once they book a room</p>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-gray-100">
-                        <tr>
-                          <th className="px-4 py-3 text-left text-sm font-semibold">Tenant</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold">Contact</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold">Hostel</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold">Room</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold">Status</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold">Rent</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold">Start Date</th>
-                          <th className="px-4 py-3 text-left text-sm font-semibold">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {tenants
-                          .filter(t => {
-                            if (selectedTenantHostel !== 'all' && t.hostel._id !== selectedTenantHostel) return false
-                            if (tenantSearchQuery && !(
-                              t.tenant?.name?.toLowerCase().includes(tenantSearchQuery.toLowerCase()) ||
-                              t.tenant?.email?.toLowerCase().includes(tenantSearchQuery.toLowerCase())
-                            )) return false
-                            return true
-                          })
-                          .map((contract) => (
-                          <tr className="border-b hover:bg-gray-50" key={contract._id}>
-                            <td className="px-4 py-3">
-                              <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-primary text-white rounded-full flex items-center justify-center font-bold">
-                                  {contract.tenant?.name?.charAt(0).toUpperCase() || '?'}
+                  <div className="space-y-4">
+                    {tenants
+                      .filter(t => {
+                        if (selectedTenantHostel !== 'all' && t.hostel._id !== selectedTenantHostel) return false
+                        if (tenantSearchQuery && !(
+                          t.tenant?.name?.toLowerCase().includes(tenantSearchQuery.toLowerCase()) ||
+                          t.tenant?.email?.toLowerCase().includes(tenantSearchQuery.toLowerCase())
+                        )) return false
+                        return true
+                      })
+                      .map((contract) => (
+                        <div 
+                          key={contract._id} 
+                          className="bg-white border-2 border-gray-200 rounded-2xl p-6 hover:shadow-xl hover:border-blue-300 transition-all duration-300"
+                        >
+                          <div className="flex flex-wrap items-start gap-6">
+                            {/* Tenant Info */}
+                            <div className="flex items-center gap-4 flex-1 min-w-[250px]">
+                              <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-2xl flex items-center justify-center font-bold text-2xl shadow-lg">
+                                {contract.tenant?.name?.charAt(0).toUpperCase() || '?'}
+                              </div>
+                              <div className="flex-1">
+                                <h4 className="font-bold text-lg text-gray-800 mb-1">{contract.tenant?.name || 'N/A'}</h4>
+                                <div className="space-y-1">
+                                  <p className="text-sm text-gray-600 flex items-center gap-2">
+                                    <span>📧</span>
+                                    <span className="truncate">{contract.tenant?.email || 'N/A'}</span>
+                                  </p>
+                                  <p className="text-sm text-gray-600 flex items-center gap-2">
+                                    <span>📞</span>
+                                    <span>{contract.tenant?.phone || 'N/A'}</span>
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Room & Hostel Info */}
+                            <div className="flex-1 min-w-[200px]">
+                              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-200">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <span className="text-2xl">🏨</span>
+                                  <div>
+                                    <p className="font-semibold text-gray-800">{contract.hostel?.name || 'N/A'}</p>
+                                    <p className="text-xs text-gray-600">{contract.hostel?.address?.city}</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2 mt-3 pt-3 border-t border-blue-200">
+                                  <span className="text-2xl">🚪</span>
+                                  <div>
+                                    <p className="font-bold text-blue-600 text-xl">Room {contract.room?.roomNumber || 'N/A'}</p>
+                                    <p className="text-xs text-gray-600 capitalize">{contract.room?.roomType} • Floor {contract.room?.floor}</p>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Status & Financial Info */}
+                            <div className="flex-1 min-w-[200px]">
+                              <div className="space-y-3">
+                                <div>
+                                  <p className="text-xs text-gray-500 mb-1">Status</p>
+                                  <span className={`inline-flex items-center px-4 py-2 rounded-xl text-sm font-bold shadow-sm ${
+                                    contract.status === 'active' ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white' :
+                                    contract.status === 'pending_signatures' ? 'bg-gradient-to-r from-yellow-400 to-orange-400 text-white' :
+                                    'bg-gray-200 text-gray-700'
+                                  }`}>
+                                    {contract.status === 'active' ? '✓ Active' : 
+                                     contract.status === 'pending_signatures' ? '⏳ Pending' : 
+                                     contract.status}
+                                  </span>
+                                </div>
+                                <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-3 border border-green-200">
+                                  <p className="text-xs text-gray-600 mb-1">Monthly Rent</p>
+                                  <p className="font-bold text-2xl text-green-600">₹{contract.monthlyRent || 'N/A'}</p>
+                                  <p className="text-xs text-gray-600 mt-1">Deposit: ₹{contract.securityDeposit || 'N/A'}</p>
                                 </div>
                                 <div>
-                                  <p className="font-semibold text-text-dark">{contract.tenant?.name || 'N/A'}</p>
+                                  <p className="text-xs text-gray-500 mb-1">Start Date</p>
+                                  <p className="text-sm font-semibold text-gray-800">
+                                    📅 {contract.startDate ? new Date(contract.startDate).toLocaleDateString('en-IN', { 
+                                      day: '2-digit', 
+                                      month: 'short', 
+                                      year: 'numeric' 
+                                    }) : 'N/A'}
+                                  </p>
                                 </div>
                               </div>
-                            </td>
-                            <td className="px-4 py-3">
-                              <p className="text-sm text-text-muted">📧 {contract.tenant?.email || 'N/A'}</p>
-                              <p className="text-sm text-text-muted">📞 {contract.tenant?.phone || 'N/A'}</p>
-                            </td>
-                            <td className="px-4 py-3">
-                              <p className="font-medium text-text-dark">{contract.hostel?.name || 'N/A'}</p>
-                              <p className="text-xs text-text-muted">{contract.hostel?.address?.city}</p>
-                            </td>
-                            <td className="px-4 py-3">
-                              <p className="font-bold text-primary text-lg">{contract.room?.roomNumber || 'N/A'}</p>
-                              <p className="text-xs text-text-muted capitalize">{contract.room?.roomType} • Floor {contract.room?.floor}</p>
-                            </td>
-                            <td className="px-4 py-3">
-                              <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                                contract.status === 'active' ? 'bg-green-100 text-green-700' :
-                                contract.status === 'pending_signatures' ? 'bg-yellow-100 text-yellow-700' :
-                                'bg-gray-100 text-gray-700'
-                              }`}>
-                                {contract.status === 'active' ? '✓ Active' : 
-                                 contract.status === 'pending_signatures' ? '⏳ Pending' : 
-                                 contract.status}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3">
-                              <p className="font-bold text-accent">₹{contract.rent || 'N/A'}</p>
-                              <p className="text-xs text-text-muted">Deposit: ₹{contract.securityDeposit || 'N/A'}</p>
-                            </td>
-                            <td className="px-4 py-3">
-                              <p className="text-sm text-text-dark">
-                                {contract.startDate ? new Date(contract.startDate).toLocaleDateString('en-IN', { 
-                                  day: '2-digit', 
-                                  month: 'short', 
-                                  year: 'numeric' 
-                                }) : 'N/A'}
-                              </p>
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="flex gap-2">
-                                {(contract.status === 'pending_signatures' || contract.status === 'draft') && (
-                                  <button
-                                    onClick={() => handleApproveTenant(contract._id)}
-                                    className="bg-green-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-600 transition"
-                                  >
-                                    Accept
-                                  </button>
-                                )}
+                            </div>
+
+                            {/* Actions */}
+                            <div className="flex flex-col gap-2 min-w-[150px]">
+                              {(contract.status === 'pending_signatures' || contract.status === 'draft') && (
                                 <button
-                                  onClick={() => handleTerminateTenant(contract._id)}
-                                  className="bg-red-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-red-600 transition"
+                                  onClick={() => handleApproveTenant(contract._id)}
+                                  className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white px-5 py-3 rounded-xl text-sm font-bold shadow-lg hover:shadow-xl transition-all duration-300 flex items-center justify-center gap-2"
                                 >
-                                  Terminate
+                                  <span>✓</span>
+                                  <span>Accept</span>
                                 </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                              )}
+                              <button
+                                onClick={() => handleTerminateTenant(contract._id)}
+                                className="bg-gradient-to-r from-red-500 to-rose-500 hover:from-red-600 hover:to-rose-600 text-white px-5 py-3 rounded-xl text-sm font-bold shadow-lg hover:shadow-xl transition-all duration-300 flex items-center justify-center gap-2"
+                              >
+                                <span>✕</span>
+                                <span>Terminate</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                   </div>
                 )}
               </div>
 
               {/* Summary Cards */}
-              <div className="grid md:grid-cols-3 gap-6">
-                <div className="stats-card">
-                  <p className="text-text-muted text-sm mb-2">Total Active Tenants</p>
-                  <h3 className="text-4xl font-bold text-primary">{tenants.filter(t => t.status === 'active').length}</h3>
+              <div className="grid md:grid-cols-3 gap-6 mt-6">
+                <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl p-6 shadow-xl text-white transform hover:scale-105 transition-transform duration-300">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-4xl">👥</span>
+                    <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                      <span className="text-2xl">✓</span>
+                    </div>
+                  </div>
+                  <p className="text-blue-100 text-sm mb-2 font-medium">Total Active Tenants</p>
+                  <h3 className="text-5xl font-bold">{tenants.filter(t => t.status === 'active').length}</h3>
+                  <p className="text-blue-100 text-xs mt-2">Currently residing in your hostels</p>
                 </div>
-                <div className="stats-card">
-                  <p className="text-text-muted text-sm mb-2">Pending Contracts</p>
-                  <h3 className="text-4xl font-bold text-yellow-600">{tenants.filter(t => t.status === 'pending_signatures').length}</h3>
+                <div className="bg-gradient-to-br from-yellow-400 to-orange-500 rounded-2xl p-6 shadow-xl text-white transform hover:scale-105 transition-transform duration-300">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-4xl">⏳</span>
+                    <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                      <span className="text-2xl">📋</span>
+                    </div>
+                  </div>
+                  <p className="text-yellow-100 text-sm mb-2 font-medium">Pending Contracts</p>
+                  <h3 className="text-5xl font-bold">{tenants.filter(t => t.status === 'pending_signatures').length}</h3>
+                  <p className="text-yellow-100 text-xs mt-2">Awaiting approval or signatures</p>
                 </div>
-                <div className="stats-card">
-                  <p className="text-text-muted text-sm mb-2">Monthly Revenue</p>
-                  <h3 className="text-4xl font-bold text-success">₹{tenants.filter(t => t.status === 'active').reduce((sum, t) => sum + (t.rent || 0), 0).toLocaleString()}</h3>
+                <div className="bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl p-6 shadow-xl text-white transform hover:scale-105 transition-transform duration-300">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-4xl">💰</span>
+                    <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+                      <span className="text-2xl">₹</span>
+                    </div>
+                  </div>
+                  <p className="text-green-100 text-sm mb-2 font-medium">Monthly Revenue</p>
+                  <h3 className="text-4xl font-bold">₹{tenants.filter(t => t.status === 'active').reduce((sum, t) => sum + (t.monthlyRent || 0), 0).toLocaleString()}</h3>
+                  <p className="text-green-100 text-xs mt-2">From active tenant contracts</p>
                 </div>
               </div>
             </div>
@@ -2009,12 +2104,28 @@ export default function OwnerDashboard() {
             <div className="card">
               <h3 className="text-2xl font-bold mb-4 text-text-dark">Profile Settings</h3>
               <form
-                className="space-y-4 max-w-xl"
+                className="space-y-6 max-w-2xl"
                 onSubmit={async (e) => {
                   e.preventDefault()
                   try {
                     setProfileLoading(true)
-                    await ownerAPI.getMyHostels() // keep token fresh via interceptor
+                    let uploadedImageUrl = null
+
+                    // Upload profile picture first if a new file was selected
+                    if (profilePicture && profilePicture instanceof File) {
+                      try {
+                        showToast('Uploading profile photo...', 'info')
+                        const photoResponse = await authAPI.uploadProfilePhoto(profilePicture)
+                        if (photoResponse.data?.data?.profileImage) {
+                          uploadedImageUrl = photoResponse.data.data.profileImage
+                          setProfilePicturePreview(uploadedImageUrl)
+                          showToast('Profile photo uploaded successfully!', 'success')
+                        }
+                      } catch (photoError) {
+                        console.error('Error uploading profile photo:', photoError)
+                        showToast(photoError.response?.data?.message || 'Failed to upload profile photo', 'error')
+                      }
+                    }
 
                     const payload = {}
                     if (profile.displayName) payload.name = profile.displayName
@@ -2027,46 +2138,108 @@ export default function OwnerDashboard() {
 
                     await authAPI.updateProfile(payload)
                     setProfileMessage('Profile saved successfully.')
+                    showToast('Profile updated successfully!', 'success')
+                    setProfilePicture(null)
                     setTimeout(() => setProfileMessage(''), 2000)
                   } catch (err) {
                     setProfileMessage(err.response?.data?.message || 'Failed to save profile')
+                    showToast(err.response?.data?.message || 'Failed to save profile', 'error')
                     setTimeout(() => setProfileMessage(''), 2500)
                   } finally {
                     setProfileLoading(false)
                   }
                 }}
               >
-                <div>
-                  <label className="block text-sm font-medium text-text-dark mb-1">
-                    Display Name
-                  </label>
-                  <input
-                    className="input w-full"
-                    value={profile.displayName}
-                    onChange={(e) => setProfile((p) => ({ ...p, displayName: e.target.value }))}
-                    placeholder={user?.name || 'Your name'}
-                  />
+                {/* Profile Picture Section */}
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 border-2 border-blue-200">
+                  <label className="block text-sm font-bold text-gray-800 mb-4">Profile Picture</label>
+                  <div className="flex items-center gap-6">
+                    <div className="relative">
+                      <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-white shadow-lg bg-gradient-to-br from-blue-500 to-indigo-600">
+                        {profilePicturePreview ? (
+                          <img src={profilePicturePreview} alt="Profile" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-white text-4xl font-bold">
+                            {user?.name?.charAt(0).toUpperCase() || 'O'}
+                          </div>
+                        )}
+                      </div>
+                      <input
+                        type="file"
+                        id="owner-profile-picture"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files[0]
+                          if (file) {
+                            setProfilePicture(file)
+                            const reader = new FileReader()
+                            reader.onloadend = () => setProfilePicturePreview(reader.result)
+                            reader.readAsDataURL(file)
+                          }
+                        }}
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm text-gray-600 mb-3">Upload a profile picture to personalize your account</p>
+                      <div className="flex gap-3">
+                        <label
+                          htmlFor="owner-profile-picture"
+                          className="px-4 py-2 bg-primary text-white rounded-lg font-semibold hover:bg-blue-700 transition cursor-pointer"
+                        >
+                          📷 Choose Photo
+                        </label>
+                        {profilePicturePreview && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setProfilePicture(null)
+                              setProfilePicturePreview(null)
+                            }}
+                            className="px-4 py-2 bg-red-500 text-white rounded-lg font-semibold hover:bg-red-600 transition"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-text-dark mb-1">
-                    Contact Number
-                  </label>
-                  <input
-                    className="input w-full"
-                    value={profile.contact}
-                    onChange={(e) => setProfile((p) => ({ ...p, contact: e.target.value }))}
-                    placeholder="9876543210"
-                  />
+
+                <div className="grid md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-text-dark mb-1">
+                      Display Name
+                    </label>
+                    <input
+                      className="input w-full"
+                      value={profile.displayName}
+                      onChange={(e) => setProfile((p) => ({ ...p, displayName: e.target.value }))}
+                      placeholder={user?.name || 'Your name'}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-text-dark mb-1">
+                      Contact Number
+                    </label>
+                    <input
+                      className="input w-full"
+                      value={profile.contact}
+                      onChange={(e) => setProfile((p) => ({ ...p, contact: e.target.value }))}
+                      placeholder="9876543210"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-text-dark mb-1">Email</label>
+                    <input
+                      className="input w-full"
+                      value={profile.email}
+                      onChange={(e) => setProfile((p) => ({ ...p, email: e.target.value }))}
+                      placeholder="you@example.com"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-text-dark mb-1">Email</label>
-                  <input
-                    className="input w-full"
-                    value={profile.email}
-                    onChange={(e) => setProfile((p) => ({ ...p, email: e.target.value }))}
-                    placeholder="you@example.com"
-                  />
-                </div>
+                
                 <div>
                   <label className="block text-sm font-medium text-text-dark mb-1">Bio</label>
                   <textarea
@@ -3458,6 +3631,100 @@ export default function OwnerDashboard() {
               </button>
             </div>
           </div>
+        </div>
+      </div>
+    )}
+
+    {/* Confirmation Modal */}
+    {showConfirmModal && (
+      <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+        <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl transform transition-all animate-scale-in">
+          {/* Modal Header */}
+          <div className={`p-6 rounded-t-3xl ${
+            confirmModalData.type === 'approve' 
+              ? 'bg-gradient-to-r from-green-500 to-emerald-500' 
+              : 'bg-gradient-to-r from-red-500 to-rose-500'
+          }`}>
+            <div className="flex items-center gap-4">
+              <div className="w-14 h-14 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm">
+                <span className="text-4xl">
+                  {confirmModalData.type === 'approve' ? '✓' : '⚠️'}
+                </span>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-2xl font-bold text-white">{confirmModalData.title}</h3>
+                <p className="text-white/90 text-sm mt-1">Please confirm your action</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Modal Body */}
+          <div className="p-6">
+            <p className="text-gray-700 text-base leading-relaxed">
+              {confirmModalData.message}
+            </p>
+            
+            <div className={`mt-4 p-4 rounded-xl ${
+              confirmModalData.type === 'approve' 
+                ? 'bg-green-50 border border-green-200' 
+                : 'bg-red-50 border border-red-200'
+            }`}>
+              <p className={`text-sm font-medium ${
+                confirmModalData.type === 'approve' ? 'text-green-800' : 'text-red-800'
+              }`}>
+                {confirmModalData.type === 'approve' 
+                  ? '📧 The tenant will receive a confirmation email and SMS notification.' 
+                  : '⚠️ This action cannot be undone. The tenant will be notified immediately.'}
+              </p>
+            </div>
+          </div>
+
+          {/* Modal Footer */}
+          <div className="p-6 bg-gray-50 rounded-b-3xl flex gap-3">
+            <button
+              onClick={() => setShowConfirmModal(false)}
+              className="flex-1 px-6 py-3 border-2 border-gray-300 text-gray-700 rounded-xl font-semibold hover:bg-gray-100 transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                setShowConfirmModal(false)
+                if (confirmModalData.onConfirm) {
+                  confirmModalData.onConfirm()
+                }
+              }}
+              className={`flex-1 px-6 py-3 rounded-xl font-bold text-white shadow-lg hover:shadow-xl transition-all ${
+                confirmModalData.type === 'approve'
+                  ? 'bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600'
+                  : 'bg-gradient-to-r from-red-500 to-rose-500 hover:from-red-600 hover:to-rose-600'
+              }`}
+            >
+              {confirmModalData.type === 'approve' ? 'Yes, Approve' : 'Yes, Terminate'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Toast Notification */}
+    {toast.show && (
+      <div className="fixed top-4 right-4 z-[9999] animate-slide-in">
+        <div className={`flex items-center gap-3 px-6 py-4 rounded-xl shadow-2xl border-2 min-w-[350px] ${
+          toast.type === 'success' 
+            ? 'bg-gradient-to-r from-green-500 to-emerald-500 border-green-300 text-white' 
+            : 'bg-gradient-to-r from-red-500 to-rose-500 border-red-300 text-white'
+        }`}>
+          <div className="text-2xl">
+            {toast.type === 'success' ? '✓' : '✕'}
+          </div>
+          <div className="font-semibold flex-1">{toast.message}</div>
+          <button
+            onClick={() => setToast({ show: false, message: '', type: 'success' })}
+            className="ml-2 text-white/80 hover:text-white transition"
+          >
+            ✕
+          </button>
         </div>
       </div>
     )}

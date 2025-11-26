@@ -56,6 +56,20 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  // Profile fields
+  displayName: {
+    type: String,
+    trim: true,
+    default: ''
+  },
+  hobbies: [{
+    type: String,
+    trim: true
+  }],
+  foodPreferences: [{
+    type: String,
+    trim: true
+  }],
   // Tenant specific fields
   foodPreference: {
     type: String,

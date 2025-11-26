@@ -10,10 +10,12 @@ const {
   refreshTokenController,
   sendPhoneChangeOTP,
   verifyPhoneChangeOTP,
-  changePassword
+  changePassword,
+  uploadProfilePhoto
 } = require('../controllers/authController');
 const { protect } = require('../middleware/authMiddleware');
 const { validateRegister, validateLogin, handleValidationErrors } = require('../utils/validators');
+const upload = require('../middleware/uploadMiddleware');
 
 // Registration with OTP verification
 router.post('/register', validateRegister, handleValidationErrors, register);
@@ -25,6 +27,7 @@ router.post('/login', validateLogin, handleValidationErrors, login);
 router.post('/refresh-token', refreshTokenController);
 router.get('/me', protect, getMe);
 router.put('/profile', protect, updateProfile);
+router.post('/upload-profile-photo', protect, upload.single('profilePhoto'), uploadProfilePhoto);
 
 // Phone number change with OTP verification
 router.post('/send-phone-change-otp', protect, sendPhoneChangeOTP);
