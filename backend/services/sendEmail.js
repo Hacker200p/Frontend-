@@ -1,4 +1,4 @@
-const nodemailer = require('nodemailer');
+import nodemailer from 'nodemailer';
 
 const sendEmail = async (options) => {
   // Check if email credentials are configured
@@ -32,4 +32,4 @@ const sendEmail = async (options) => {
   }
 };
 
-module.exports = sendEmail;
+export default sendEmail;

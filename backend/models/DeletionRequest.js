@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const deletionRequestSchema = new mongoose.Schema({
   tenant: {
@@ -44,4 +44,4 @@ const deletionRequestSchema = new mongoose.Schema({
 deletionRequestSchema.index({ tenant: 1, status: 1 });
 deletionRequestSchema.index({ owner: 1, status: 1 });
 
-module.exports = mongoose.model('DeletionRequest', deletionRequestSchema);
+export default mongoose.model('DeletionRequest', deletionRequestSchema);

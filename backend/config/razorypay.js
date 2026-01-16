@@ -1,4 +1,4 @@
-const Razorpay = require('razorpay');
+import Razorpay from 'razorpay';
 
 // Initialize Razorpay only if credentials are available
 let razorpayInstance = null;
@@ -13,4 +13,4 @@ if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
   console.log('Razorpay credentials not configured - payments disabled');
 }
 
-module.exports = razorpayInstance;
+export default razorpayInstance;

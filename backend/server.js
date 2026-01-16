@@ -1,49 +1,120 @@
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const compression = require('compression');
-const morgan = require('morgan');
-const rateLimit = require('express-rate-limit');
-const http = require('http');
-const socketIO = require('socket.io');
-const connectDB = require('./config/db');
-const { errorHandler } = require('./middleware/errorMiddleware');
+import dotenv from 'dotenv';
+dotenv.config();
+
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import compression from 'compression';
+import morgan from 'morgan';
+import rateLimit from 'express-rate-limit';
+import http from 'http';
+import { Server } from 'socket.io';
+import connectDB from './config/db.js';
+import { errorHandler } from './middleware/errorMiddleware.js';
+import HealthMonitor from './utils/healthMonitor.js';
+import RequestQueueManager from './middleware/requestQueue.js';
+import GracefulShutdown from './utils/gracefulShutdown.js';
 
 // Import routes
-const authRoutes = require('./routes/authRoutes');
-const adminRoutes = require('./routes/adminRoutes');
-const ownerRoutes = require('./routes/ownerRoutes');
-const tenantRoutes = require('./routes/tenantRoutes');
-const canteenRoutes = require('./routes/canteenRoutes');
-const contractRoutes = require('./routes/contractRoutes');
+import authRoutes from './routes/authRoutes.js';
+import adminRoutes from './routes/adminRoutes.js';
+import ownerRoutes from './routes/ownerRoutes.js';
+import tenantRoutes from './routes/tenantRoutes.js';
+import canteenRoutes from './routes/canteenRoutes.js';
+import contractRoutes from './routes/contractRoutes.js';
 
 // Initialize express
 const app = express();
 const server = http.createServer(app);
-const io = socketIO(server, {
+
+// Initialize health monitor
+const healthMonitor = new HealthMonitor({
+  maxMemoryPercent: 85,
+  maxCpuPercent: 90,
+  checkInterval: 10000,
+});
+healthMonitor.start();
+
+// Initialize request queue manager
+const requestQueue = new RequestQueueManager({
+  maxQueueSize: 1000,
+  maxConcurrent: 100,
+  requestTimeout: 30000,
+});
+
+// Initialize graceful shutdown
+const gracefulShutdown = new GracefulShutdown(server, {
+  timeout: 30000,
+  onShutdown: async () => {
+    console.log('Closing database connections...');
+    healthMonitor.stop();
+    // Add any cleanup logic here
+  },
+});
+gracefulShutdown.init();
+
+const io = new Server(server, {
   cors: {
     origin: process.env.FRONTEND_URL || 'http://localhost:3000',
     methods: ['GET', 'POST'],
   },
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  transports: ['websocket', 'polling'],
 });
 
 // Connect to database
 connectDB();
 
+// Trust proxy for rate limiting behind reverse proxies
+app.set('trust proxy', 1);
+
+// Apply graceful shutdown middleware first
+app.use(gracefulShutdown.middleware());
+
+// Apply request queue middleware
+app.use(requestQueue.middleware());
+
 // Middleware
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+    },
+  },
+}));
+
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:3000',
   credentials: true,
 }));
-app.use(compression());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+
+// Compression with better settings
+app.use(compression({
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) {
+      return false;
+    }
+    return compression.filter(req, res);
+  },
+  level: 6, // Balanced compression level
+  threshold: 1024, // Only compress responses > 1KB
+}));
+
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Logging
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
+} else {
+  // Production logging - more concise
+  app.use(morgan('combined', {
+    skip: (req, res) => res.statusCode < 400, // Only log errors in production
+  }));
 }
 
 // Rate limiting (tunable via env vars and disabled in development)
@@ -86,9 +157,17 @@ io.on('connection', (socket) => {
 // Make io accessible to routes
 app.set('io', io);
 
+// Cache middleware for performance
+import { cacheStrategies } from './middleware/cacheMiddleware.js';
+
 // Public routes (no authentication required)
-const { searchHostels } = require('./controllers/tenantController');
-app.get('/api/hostels/search', searchHostels);
+import { searchHostels } from './controllers/tenantController.js';
+app.get('/api/hostels/search', cacheStrategies.dynamic, searchHostels);
+
+// Mapbox token endpoint - cache for 1 hour
+app.get('/api/config/mapbox-token', cacheStrategies.semiStatic, (req, res) => {
+  res.json({ success: true, token: process.env.VITE_MAPBOX_TOKEN || '' });
+});
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -98,14 +177,36 @@ app.use('/api/tenant', tenantRoutes);
 app.use('/api/canteen', canteenRoutes);
 app.use('/api/contract', contractRoutes);
 
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ success: true, message: 'SafeStay Hub API is running' });
+// Health check - cache for 30 seconds
+app.get('/api/health', cacheStrategies.dynamic, (req, res) => {
+  const healthStatus = healthMonitor.getStatus();
+  const queueStats = requestQueue.getStats();
+  
+  res.json({ 
+    success: true, 
+    message: 'SafeStay Hub API is running',
+    timestamp: new Date().toISOString(),
+    uptime: Math.floor(process.uptime()),
+    environment: process.env.NODE_ENV || 'development',
+    health: healthStatus,
+    queue: queueStats,
+  });
 });
 
-// Mapbox token endpoint
-app.get('/api/config/mapbox-token', (req, res) => {
-  res.json({ success: true, token: process.env.VITE_MAPBOX_TOKEN || '' });
+// Metrics endpoint for monitoring
+app.get('/api/metrics', (req, res) => {
+  const healthStatus = healthMonitor.getStatus();
+  const queueStats = requestQueue.getStats();
+  
+  res.json({
+    success: true,
+    metrics: {
+      health: healthStatus,
+      requests: queueStats,
+      memory: process.memoryUsage(),
+      uptime: process.uptime(),
+    }
+  });
 });
 
 // 404 handler

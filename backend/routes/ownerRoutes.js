@@ -1,6 +1,6 @@
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const {
+import {
   createHostel,
   getMyHostels,
   updateHostel,
@@ -18,10 +18,13 @@ const {
   approveDeletionRequest,
   rejectDeletionRequest,
   getHostelFeedbacks,
-} = require('../controllers/ownerController');
-const { protect } = require('../middleware/authMiddleware');
-const { authorize } = require('../middleware/roleMiddleware');
-const upload = require('../middleware/uploadMiddleware');
+  deleteHostel,
+  deleteHostelMedia,
+  deleteRoom,
+} from '../controllers/ownerController.js';
+import { protect } from '../middleware/authMiddleware.js';
+import { authorize } from '../middleware/roleMiddleware.js';
+import upload from '../middleware/uploadMiddleware.js';
 
 router.use(protect);
 router.use(authorize('owner'));
@@ -32,17 +35,17 @@ router.route('/hostels')
 
 router.route('/hostels/:id')
   .put(updateHostel)
-  .delete(require('../controllers/ownerController').deleteHostel);
+  .delete(deleteHostel);
 
 router.post('/hostels/:id/upload', upload.array('files', 10), uploadHostelMedia);
-router.delete('/hostels/:id/media', require('../controllers/ownerController').deleteHostelMedia);
+router.delete('/hostels/:id/media', deleteHostelMedia);
 
 router.route('/hostels/:id/rooms')
   .post(createRoom)
   .get(getHostelRooms);
 
 router.put('/rooms/:id', updateRoom);
-router.delete('/rooms/:id', require('../controllers/ownerController').deleteRoom);
+router.delete('/rooms/:id', deleteRoom);
 router.post('/rooms/:id/upload', upload.fields([
   { name: 'photos', maxCount: 10 },
   { name: 'video', maxCount: 1 },
@@ -65,4 +68,4 @@ router.put('/deletion-requests/:id/reject', rejectDeletionRequest);
 // Feedback routes
 router.get('/feedbacks', getHostelFeedbacks);
 
-module.exports = router;
+export default router;

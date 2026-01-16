@@ -1,8 +1,9 @@
-const Contract = require('../models/Contract');
-const Room = require('../models/Room');
-const Hostel = require('../models/Hostel');
-const cloudinary = require('../config/cloudinary');
-const sendEmail = require('../utils/sendEmail');
+import Contract from '../models/Contract.js';
+import Room from '../models/Room.js';
+import Hostel from '../models/Hostel.js';
+import User from '../models/User.js';
+import cloudinary from '../config/cloudinary.js';
+import sendEmail from '../services/sendEmail.js';
 
 // @desc    Create contract
 // @route   POST /api/contract
@@ -40,7 +41,7 @@ const createContract = async (req, res) => {
 		});
 
 		// Send email to tenant
-		const tenantUser = await require('../models/User').findById(tenant);
+		const tenantUser = await User.findById(tenant);
 		await sendEmail({
 			email: tenantUser.email,
 			subject: 'New Contract - SafeStay Hub',
@@ -129,7 +130,7 @@ const signContract = async (req, res) => {
 			await room.save();
 
 			// Update tenant's current hostel and room
-			const tenant = await require('../models/User').findById(contract.tenant);
+		const tenant = await User.findById(contract.tenant);
 			tenant.currentHostel = contract.hostel;
 			tenant.currentRoom = contract.room;
 			await tenant.save();
@@ -213,7 +214,7 @@ const terminateContract = async (req, res) => {
 		await room.save();
 
 		// Clear tenant's current hostel and room
-		const tenant = await require('../models/User').findById(contract.tenant);
+	const tenant = await User.findById(contract.tenant);
 		tenant.currentHostel = null;
 		tenant.currentRoom = null;
 		await tenant.save();
@@ -246,7 +247,7 @@ const getOwnerContracts = async (req, res) => {
 	}
 };
 
-module.exports = {
+export {
 	createContract,
 	getContract,
 	signContract,

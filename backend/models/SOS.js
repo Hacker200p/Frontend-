@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const sosSchema = new mongoose.Schema({
   tenant: {
@@ -50,4 +50,4 @@ const sosSchema = new mongoose.Schema({
 sosSchema.index({ tenant: 1, createdAt: -1 });
 sosSchema.index({ hostel: 1, status: 1 });
 
-module.exports = mongoose.model('SOS', sosSchema);
+export default mongoose.model('SOS', sosSchema);

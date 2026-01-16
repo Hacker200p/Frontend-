@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
 import { LogOut, Menu, X } from 'lucide-react'
 import api, { tenantAPI, canteenAPI, contractAPI, authAPI } from '../../services/api'
-import PanoramaViewer from '../../components/PanoramaViewer'
+import PanoramaViewer from '../../components/panorama/PanoramaViewer'
 
 const WEEK_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 
@@ -72,8 +72,6 @@ const LONG_FETCH_COOLDOWN = 60000
 export default function TenantDashboard() {
   const navigate = useNavigate()
   const location = useLocation()
-  
-  console.log('TenantDashboard mounted - location.state:', location.state)
   
   const { user, logout } = useAuthStore()
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -259,8 +257,6 @@ export default function TenantDashboard() {
     // Check if user has any active contracts/bookings
     const checkUserBookingStatus = async () => {
       try {
-        console.log('Checking user booking status...')
-        
         // Fetch both contracts and hostels in parallel
         const [contractsResponse, hostelsResponse] = await Promise.all([
           tenantAPI.getMyContracts(),
@@ -268,10 +264,8 @@ export default function TenantDashboard() {
         ])
         
         const contracts = contractsResponse.data?.data || []
-        console.log('User contracts:', contracts)
         
         const hostelsData = hostelsResponse.data?.data || []
-        console.log('Available hostels:', hostelsData.length)
         
         // Store contracts in state
         setMyContracts(contracts)
@@ -333,18 +327,13 @@ export default function TenantDashboard() {
 
   // Handle redirect from landing page
   useEffect(() => {
-    console.log('Checking for redirect - location.state:', location.state)
-    console.log('Hostels loaded:', hostels.length)
-    
     if (location.state?.selectedHostelId) {
       const hostelId = location.state.selectedHostelId
-      console.log('Redirecting to hostel from landing page:', hostelId)
       
       if (hostels.length > 0) {
         // Find and select the hostel
         const hostel = hostels.find(h => h._id === hostelId)
         if (hostel) {
-          console.log('Found hostel:', hostel.name)
           setSelectedHostelId(hostelId)
           setSelectedHostel(hostel)
           setActiveTab('overview')
@@ -354,14 +343,8 @@ export default function TenantDashboard() {
           
           // Clear the navigation state
           window.history.replaceState({}, document.title)
-        } else {
-          console.log('Hostel not found in list, available hostels:', hostels.map(h => h._id))
         }
-      } else {
-        console.log('Waiting for hostels to load...')
       }
-    } else {
-      console.log('No redirect hostel ID in location state')
     }
   }, [location.state, hostels])
 
@@ -626,7 +609,6 @@ export default function TenantDashboard() {
       }
     } catch (error) {
       console.error('Payment order error:', error)
-      console.error('Error details:', error.response || error)
       setBookingMessage(error.response?.data?.message || error.message || 'Failed to initiate payment. Please try again.')
       setBookingLoading(false)
     }

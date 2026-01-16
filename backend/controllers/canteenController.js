@@ -1,16 +1,19 @@
-const Canteen = require('../models/Canteen');
-const MenuItem = require('../models/MenuItem');
-const Order = require('../models/Order');
-const razorpay = require('../config/razorypay');
-const crypto = require('crypto');
-const cloudinary = require('../config/cloudinary');
+import crypto from 'crypto';
+import Canteen from '../models/Canteen.js';
+import MenuItem from '../models/MenuItem.js';
+import Order from '../models/Order.js';
+import Hostel from '../models/Hostel.js';
+import Contract from '../models/Contract.js';
+import Subscription from '../models/Subscription.js';
+import Feedback from '../models/Feedback.js';
+import razorpay from '../config/razorypay.js';
+import cloudinary from '../config/cloudinary.js';
 
 // @desc    Create canteen
 // @route   POST /api/canteen
 // @access  Private/CanteenProvider
 const createCanteen = async (req, res) => {
   try {
-    const Hostel = require('../models/Hostel');
     
     // Get the primary hostel details for city
     const primaryHostel = await Hostel.findById(req.body.hostel);
@@ -61,7 +64,6 @@ const getMyCanteens = async (req, res) => {
 // @access  Private/CanteenProvider
 const getAvailableHostels = async (req, res) => {
   try {
-    const Hostel = require('../models/Hostel');
     const { city } = req.query;
     
     const query = { isActive: true };
@@ -307,8 +309,6 @@ const createOrder = async (req, res) => {
     }
 
     // Get tenant's hostel location from active contract
-    const Contract = require('../models/Contract');
-    const Hostel = require('../models/Hostel');
     
     const activeContract = await Contract.findOne({
       tenant: req.user.id,
@@ -639,9 +639,6 @@ const createSubscriptionOrder = async (req, res) => {
       specialInstructions,
       allergies 
     } = req.body;
-    
-    const Subscription = require('../models/Subscription');
-    const Contract = require('../models/Contract');
 
     // Support both canteen and canteenId from frontend
     const canteenIdToUse = canteen || canteenId;
@@ -750,7 +747,6 @@ const verifySubscriptionPayment = async (req, res) => {
       razorpaySignature,
       razorpay_signature  // snake_case from Razorpay response
     } = req.body;
-    const Subscription = require('../models/Subscription');
 
     // Support both camelCase and snake_case
     const orderId = razorpayOrderId || razorpay_order_id
@@ -840,7 +836,6 @@ const verifySubscriptionPayment = async (req, res) => {
 // @access  Private/Tenant
 const getMySubscriptions = async (req, res) => {
   try {
-    const Subscription = require('../models/Subscription');
     const subscriptions = await Subscription.find({ tenant: req.user.id })
       .populate('canteen', 'name hostel')
       .populate({
@@ -861,7 +856,6 @@ const getMySubscriptions = async (req, res) => {
 // @access  Private/CanteenProvider
 const getCanteenSubscriptions = async (req, res) => {
   try {
-    const Subscription = require('../models/Subscription');
     const canteen = await Canteen.findById(req.params.id);
 
     if (!canteen) {
@@ -888,7 +882,6 @@ const getCanteenSubscriptions = async (req, res) => {
 // @access  Private/Tenant
 const cancelSubscription = async (req, res) => {
   try {
-    const Subscription = require('../models/Subscription');
     const subscription = await Subscription.findById(req.params.id);
 
     if (!subscription) {
@@ -918,7 +911,6 @@ const cancelSubscription = async (req, res) => {
 // @access  Private/Tenant
 const getAvailableCanteens = async (req, res) => {
   try {
-    const Contract = require('../models/Contract');
     
     console.log('Getting available canteens for tenant:', req.user.id);
     
@@ -981,7 +973,6 @@ const getAvailableCanteens = async (req, res) => {
 // @access  Private/CanteenProvider
 const getCanteenFeedbacks = async (req, res) => {
   try {
-    const Feedback = require('../models/Feedback');
     const canteenId = req.params.id;
 
     // Verify canteen belongs to provider
@@ -1085,7 +1076,7 @@ const rateTenant = async (req, res) => {
   }
 };
 
-module.exports = {
+export {
   createCanteen,
   getMyCanteens,
   getAvailableHostels,

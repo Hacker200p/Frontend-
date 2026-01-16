@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const contractSchema = new mongoose.Schema({
   contractNumber: {
@@ -87,4 +87,4 @@ const contractSchema = new mongoose.Schema({
   terminatedAt: Date,
 }, { timestamps: true });
 
-module.exports = mongoose.model('Contract', contractSchema);
+export default mongoose.model('Contract', contractSchema);

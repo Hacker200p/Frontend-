@@ -1,14 +1,17 @@
-const Hostel = require('../models/Hostel');
-const Room = require('../models/Room');
-const Order = require('../models/Order');
-const Expense = require('../models/Expense');
-const Feedback = require('../models/Feedback');
-const Contract = require('../models/Contract');
-const DeletionRequest = require('../models/DeletionRequest');
-const User = require('../models/User');
-const SOS = require('../models/SOS');
-const { sendSMS } = require('../utils/sendSMS');
-const { sendEmail } = require('../utils/sendEmail');
+import crypto from 'crypto';
+import Hostel from '../models/Hostel.js';
+import Room from '../models/Room.js';
+import Order from '../models/Order.js';
+import Expense from '../models/Expense.js';
+import Feedback from '../models/Feedback.js';
+import Contract from '../models/Contract.js';
+import DeletionRequest from '../models/DeletionRequest.js';
+import User from '../models/User.js';
+import SOS from '../models/SOS.js';
+import Canteen from '../models/Canteen.js';
+import razorpay from '../config/razorypay.js';
+import sendSMS from '../services/sendSMS.js';
+import sendEmail from '../services/sendEmail.js';
 
 // @desc    Search hostels
 // @route   GET /api/tenant/hostels/search OR /api/hostels/search (public)
@@ -290,7 +293,6 @@ const createBookingOrder = async (req, res) => {
     const amount = room.rent + room.securityDeposit;
 
     // Check if Razorpay is configured
-    const razorpay = require('../config/razorypay');
     if (!razorpay) {
       // If Razorpay not configured, allow booking without payment for testing
       return res.status(200).json({
@@ -384,7 +386,6 @@ const bookRoom = async (req, res) => {
     
     // Skip verification for test mode
     if (!razorpay_order_id.startsWith('test_order_')) {
-      const crypto = require('crypto');
       const sign = razorpay_order_id + '|' + razorpay_payment_id;
       const expectedSign = crypto
         .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
@@ -464,12 +465,10 @@ const bookRoom = async (req, res) => {
     await contract.save();
 
     // Send notification email to owner
-    const User = require('../models/User');
     const owner = await User.findById(hostel.owner._id);
     const tenant = await User.findById(req.user.id);
     
     if (owner && owner.email) {
-      const sendEmail = require('../utils/sendEmail');
       await sendEmail({
         email: owner.email,
         subject: 'New Room Booking Request - SafeStay Hub',
@@ -572,7 +571,6 @@ const submitOrderFeedback = async (req, res) => {
     
     if (canteenFeedbacks.length > 0) {
       const avgRating = canteenFeedbacks.reduce((sum, f) => sum + f.rating, 0) / canteenFeedbacks.length;
-      const Canteen = require('../models/Canteen');
       await Canteen.findByIdAndUpdate(order.canteen, { 
         rating: avgRating,
         reviewCount: canteenFeedbacks.length 
@@ -728,9 +726,6 @@ const getMyFeedbacks = async (req, res) => {
       .sort('-createdAt');
 
     // Manually populate targetId based on targetType
-    const Hostel = require('../models/Hostel');
-    const Canteen = require('../models/Canteen');
-    
     const populatedFeedbacks = await Promise.all(
       feedbacks.map(async (feedback) => {
         let target = null;
@@ -886,7 +881,7 @@ const getSOSHistory = async (req, res) => {
   }
 };
 
-module.exports = {
+export {
   searchHostels,
   getHostelDetails,
   getMyExpenses,

@@ -1,4 +1,4 @@
-const twilio = require('twilio');
+import twilio from 'twilio';
 
 // Initialize Twilio client only if credentials are available
 let client = null;
@@ -41,4 +41,4 @@ const sendSMS = async (phone, message) => {
   }
 };
 
-module.exports = sendSMS;
+export default sendSMS;

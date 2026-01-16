@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import { LogOut } from 'lucide-react'
 import { useState, useEffect } from 'react'
-import HostelMapExplorer from '../components/HostelMapExplorer'
+import HostelMapExplorer from '../components/map/HostelMapExplorer'
 import { tenantAPI } from '../services/api'
 
 export default function Dashboard() {

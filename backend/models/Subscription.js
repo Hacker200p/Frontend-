@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const subscriptionSchema = new mongoose.Schema({
   tenant: {
@@ -104,4 +104,4 @@ const subscriptionSchema = new mongoose.Schema({
 subscriptionSchema.index({ tenant: 1, status: 1 });
 subscriptionSchema.index({ canteen: 1, status: 1 });
 
-module.exports = mongoose.model('Subscription', subscriptionSchema);
+export default mongoose.model('Subscription', subscriptionSchema);

@@ -1,9 +1,10 @@
-const User = require('../models/User');
-const generateToken = require('../utils/generateToken');
-const sendEmail = require('../utils/sendEmail');
-const sendSMS = require('../utils/sendSMS');
-const generateOTP = require('../utils/generateOTP');
-const cloudinary = require('../config/cloudinary');
+import jwt from 'jsonwebtoken';
+import User from '../models/User.js';
+import generateToken from '../utils/generateToken.js';
+import sendEmail from '../services/sendEmail.js';
+import sendSMS from '../services/sendSMS.js';
+import generateOTP from '../utils/generateOTP.js';
+import cloudinary from '../config/cloudinary.js';
 
 // Register new user - Now sends OTP for verification
 // @route   POST /api/auth/register
@@ -484,7 +485,6 @@ const refreshTokenController = async (req, res) => {
       return res.status(401).json({ success: false, message: 'Refresh token is required' });
     }
 
-    const jwt = require('jsonwebtoken');
     let decoded;
     
     try {
@@ -635,7 +635,7 @@ const uploadProfilePhoto = async (req, res) => {
   }
 };
 
-module.exports = { 
+export { 
   register, 
   login, 
   getMe, 

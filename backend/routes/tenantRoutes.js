@@ -1,6 +1,6 @@
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const {
+import {
   searchHostels,
   getHostelDetails,
   getMyExpenses,
@@ -17,9 +17,9 @@ const {
   getMyFeedbacks,
   sendSOSAlert,
   getSOSHistory,
-} = require('../controllers/tenantController');
-const { protect } = require('../middleware/authMiddleware');
-const { authorize } = require('../middleware/roleMiddleware');
+} from '../controllers/tenantController.js';
+import { protect } from '../middleware/authMiddleware.js';
+import { authorize } from '../middleware/roleMiddleware.js';
 
 router.use(protect);
 router.use(authorize('tenant'));
@@ -41,4 +41,4 @@ router.delete('/deletion-request/:id', cancelDeletionRequest);
 router.post('/sos', sendSOSAlert);
 router.get('/sos/history', getSOSHistory);
 
-module.exports = router;
+export default router;

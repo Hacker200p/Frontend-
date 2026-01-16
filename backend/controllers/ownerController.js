@@ -1,12 +1,12 @@
-const Hostel = require('../models/Hostel');
-const Room = require('../models/Room');
-const cloudinary = require('../config/cloudinary');
-const User = require('../models/User');
-const DeletionRequest = require('../models/DeletionRequest');
-const Contract = require('../models/Contract');
-const Feedback = require('../models/Feedback');
-const axios = require('axios');
-const FormData = require('form-data');
+import axios from 'axios';
+import FormData from 'form-data';
+import Hostel from '../models/Hostel.js';
+import Room from '../models/Room.js';
+import cloudinary from '../config/cloudinary.js';
+import User from '../models/User.js';
+import DeletionRequest from '../models/DeletionRequest.js';
+import Contract from '../models/Contract.js';
+import Feedback from '../models/Feedback.js';
 
 // Panorama service URL from environment
 const PANORAMA_SERVICE_URL = process.env.PANORAMA_SERVICE_URL || 'http://localhost:5001';
@@ -496,7 +496,6 @@ const uploadRoomMedia = async (req, res) => {
 // @access  Private/Owner
 const getMyTenants = async (req, res) => {
   try {
-    const Contract = require('../models/Contract');
     
     // Get all hostels owned by this owner
     const hostels = await Hostel.find({ owner: req.user.id }).select('_id name');
@@ -523,7 +522,6 @@ const getMyTenants = async (req, res) => {
 // @access  Private/Owner
 const getHostelTenants = async (req, res) => {
   try {
-    const Contract = require('../models/Contract');
     
     const hostel = await Hostel.findById(req.params.id);
     if (!hostel) {
@@ -553,7 +551,6 @@ const getHostelTenants = async (req, res) => {
 // @access  Private/Owner
 const approveTenantContract = async (req, res) => {
   try {
-    const Contract = require('../models/Contract');
     
     const contract = await Contract.findById(req.params.contractId)
       .populate('hostel', 'owner')
@@ -610,7 +607,6 @@ const approveTenantContract = async (req, res) => {
 // @access  Private/Owner
 const terminateTenantContract = async (req, res) => {
   try {
-    const Contract = require('../models/Contract');
     
     const contract = await Contract.findById(req.params.contractId)
       .populate('hostel', 'owner')
@@ -894,7 +890,7 @@ const deleteRoomPanorama = async (req, res) => {
   }
 };
 
-module.exports = {
+export {
   createHostel,
   getMyHostels,
   updateHostel,

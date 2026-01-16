@@ -1,14 +1,14 @@
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const {
+import {
   getAllUsers,
   getDashboardStats,
   verifyHostel,
   toggleUserStatus,
   getAllHostels,
-} = require('../controllers/adminController');
-const { protect } = require('../middleware/authMiddleware');
-const { authorize } = require('../middleware/roleMiddleware');
+} from '../controllers/adminController.js';
+import { protect } from '../middleware/authMiddleware.js';
+import { authorize } from '../middleware/roleMiddleware.js';
 
 router.use(protect);
 router.use(authorize('master_admin'));
@@ -19,4 +19,4 @@ router.get('/hostels', getAllHostels);
 router.put('/hostels/:id/verify', verifyHostel);
 router.put('/users/:id/toggle-status', toggleUserStatus);
 
-module.exports = router;
+export default router;

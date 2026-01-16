@@ -1,6 +1,6 @@
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const {
+import {
   createCanteen,
   getMyCanteens,
   getAvailableHostels,
@@ -23,10 +23,10 @@ const {
   getAvailableCanteens,
   getCanteenFeedbacks,
   rateTenant,
-} = require('../controllers/canteenController');
-const { protect } = require('../middleware/authMiddleware');
-const { authorize } = require('../middleware/roleMiddleware');
-const upload = require('../middleware/uploadMiddleware');
+} from '../controllers/canteenController.js';
+import { protect } from '../middleware/authMiddleware.js';
+import { authorize } from '../middleware/roleMiddleware.js';
+import upload from '../middleware/uploadMiddleware.js';
 
 // Provider routes
 router.post('/', protect, authorize('canteen_provider'), createCanteen);
@@ -56,4 +56,4 @@ router.post('/subscriptions/verify-payment', protect, authorize('tenant'), verif
 router.get('/subscriptions/my-subscriptions', protect, authorize('tenant'), getMySubscriptions);
 router.put('/subscriptions/:id/cancel', protect, authorize('tenant'), cancelSubscription);
 
-module.exports = router;
+export default router;

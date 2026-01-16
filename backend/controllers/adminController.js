@@ -1,6 +1,6 @@
-const User = require('../models/User');
-const Hostel = require('../models/Hostel');
-const sendEmail = require('../utils/sendEmail');
+import User from '../models/User.js';
+import Hostel from '../models/Hostel.js';
+import sendEmail from '../services/sendEmail.js';
 
 // @desc    Get all users
 // @route   GET /api/admin/users
@@ -153,7 +153,7 @@ const getAllHostels = async (req, res) => {
   }
 };
 
-module.exports = {
+export {
   getAllUsers,
   getDashboardStats,
   verifyHostel,

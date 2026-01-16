@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../../store/authStore'
 import { LogOut, Menu, X } from 'lucide-react'
 import { ownerAPI, authAPI } from '../../services/api'
-import LocationPicker from '../../components/LocationPicker'
-import PanoramaViewer from '../../components/PanoramaViewer'
-import CubemapUpload from '../../components/CubemapUpload'
+import LocationPicker from '../../components/map/LocationPicker'
+import PanoramaViewer from '../../components/panorama/PanoramaViewer'
+import CubemapUpload from '../../components/panorama/CubemapUpload'
 
 export default function OwnerDashboard() {
   const navigate = useNavigate()
@@ -689,54 +689,10 @@ export default function OwnerDashboard() {
                 <div className="flex gap-2">
                   <button 
                     type="button"
-                    onClick={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      console.log('=== DEBUG INFO ===')
-                      console.log('All Rooms Data:', allRooms)
-                      console.log('Hostels:', hostels)
-                      console.log('Current Image Indices:', currentImageIndex)
-                      console.log('Total Rooms:', allRooms.length)
-                      
-                      // Show first 5 rooms in detail
-                      console.log('\n=== FIRST 5 ROOMS DETAILED ===')
-                      allRooms.slice(0, 5).forEach(room => {
-                        console.log(`\n--- Room ${room.roomNumber} ---`)
-                        console.log('Hostel Name:', room.hostelName)
-                        console.log('Photos Array:', room.photos)
-                        console.log('Photos Count:', room.photos?.length || 0)
-                        if (room.photos && room.photos.length > 0) {
-                          room.photos.forEach((photo, idx) => {
-                            console.log(`  Photo ${idx + 1}:`, photo)
-                            console.log(`    URL: ${photo.url || photo}`)
-                          })
-                        }
-                        console.log('Has Photos:', !!(room.photos && room.photos.length > 0))
-                        console.log('Video URL:', room.videoUrl || 'None')
-                        console.log('360 URL:', room.view360Url || 'None')
-                      })
-                      
-                      // Count rooms with/without photos
-                      const withPhotos = allRooms.filter(r => r.photos && r.photos.length > 0).length
-                      const withoutPhotos = allRooms.length - withPhotos
-                      console.log('\n=== SUMMARY ===')
-                      console.log(`Rooms with photos: ${withPhotos}`)
-                      console.log(`Rooms without photos: ${withoutPhotos}`)
-                      
-                      alert(`Debug info logged!\n\nTotal: ${allRooms.length} rooms\nWith Photos: ${withPhotos}\nWithout Photos: ${withoutPhotos}\n\nCheck console (F12) for details.`)
-                    }}
-                    className="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition text-sm font-semibold cursor-pointer"
-                  >
-                    🔍 Debug
-                  </button>
-                  <button 
-                    type="button"
                     onClick={async (e) => {
                       e.preventDefault()
                       e.stopPropagation()
-                      console.log('Refreshing all rooms...')
                       await fetchAllRooms(hostels)
-                      console.log('Rooms refreshed!')
                       alert('Rooms refreshed successfully!')
                     }}
                     className="bg-primary text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition text-sm font-semibold cursor-pointer"
@@ -793,11 +749,6 @@ export default function OwnerDashboard() {
                             const hasPhotos = room.photos && room.photos.length > 0
                             const hasVideo = room.videoUrl
                             const currentIdx = currentImageIndex[room._id] || 0
-                            
-                            // Debug: log room data to check photo structure
-                            if (hasPhotos) {
-                              console.log(`Room ${room.roomNumber} photos:`, room.photos)
-                            }
                     
                     return (
                       <div key={room._id} className="card overflow-hidden hover:shadow-xl transition-shadow">
@@ -999,15 +950,6 @@ export default function OwnerDashboard() {
                           
                           {/* Action Buttons */}
                           <div className="space-y-2 pt-3 border-t">
-                            {/* Debug - Show all room data */}
-                            {console.log('Room', room.roomNumber, 'Full Data:', JSON.stringify({
-                              id: room._id,
-                              roomNumber: room.roomNumber,
-                              panorama: room.panorama,
-                              hasPanorama: !!room.panorama,
-                              panoramaUrl: room.panorama?.url
-                            }, null, 2))}
-                            
                             {/* Primary Actions Row */}
                             <div className="flex gap-2">
                               <button
@@ -1052,8 +994,6 @@ export default function OwnerDashboard() {
                                 onClick={(e) => {
                                   e.preventDefault()
                                   e.stopPropagation()
-                                  console.log('Opening panorama for room:', room.roomNumber)
-                                  console.log('Panorama URL:', room.panorama.url)
                                   setPanoramaPreview({
                                     file: null,
                                     url: room.panorama.url
@@ -1754,9 +1694,6 @@ export default function OwnerDashboard() {
                     setRoomMessage('')
                     
                     try {
-                      console.log('Form submitted')
-                      console.log('Hostel ID:', roomForm.hostelId)
-                      
                       if (!roomForm.hostelId) {
                         setRoomMessage('Please select a hostel')
                         setRoomLoading(false)
@@ -1776,12 +1713,8 @@ export default function OwnerDashboard() {
                         isAvailable: roomForm.isAvailable,
                       }
 
-                      console.log('Room data to send:', roomData)
-
                       // Call API to create room(s)
                       const response = await ownerAPI.createRoom(roomForm.hostelId, roomData)
-                      
-                      console.log('API Response:', response)
                       
                       // Upload panorama if available
                       if (roomForm.panoramaData && response.data?.data) {
@@ -1790,8 +1723,6 @@ export default function OwnerDashboard() {
                         // Upload panorama to the first created room
                         if (createdRooms.length > 0) {
                           try {
-                            console.log('Uploading panorama to room:', createdRooms[0]._id)
-                            
                             // Fetch the panorama image from Python service
                             const panoramaUrl = `http://localhost:5001${roomForm.panoramaData.url}`
                             const panoramaBlob = await fetch(panoramaUrl).then(r => r.blob())
@@ -1801,7 +1732,6 @@ export default function OwnerDashboard() {
                             formData.append('panorama', panoramaBlob, 'panorama.jpg')
                             
                             await ownerAPI.uploadRoomMedia(createdRooms[0]._id, formData)
-                            console.log('Panorama uploaded successfully')
                           } catch (panoramaErr) {
                             console.error('Failed to upload panorama:', panoramaErr)
                           }
@@ -2510,9 +2440,7 @@ export default function OwnerDashboard() {
                 // Upload panorama if selected
                 if (uploadedEditPanorama && uploadedEditPanorama.file) {
                   try {
-                    console.log('Uploading panorama to room:', editingRoom._id)
                     await ownerAPI.uploadRoomMedia(editingRoom._id, [uploadedEditPanorama.file], 'panorama')
-                    console.log('Panorama uploaded successfully')
                   } catch (panoramaErr) {
                     console.error('Panorama upload failed:', panoramaErr)
                     throw panoramaErr
@@ -2743,8 +2671,6 @@ export default function OwnerDashboard() {
                       name: file.name
                     }))
                     setUploadedPhotos([...uploadedPhotos, ...previews])
-                    console.log('Photos selected:', files)
-                    // TODO: Upload to server/cloudinary
                   }}
                 />
                 <p className="text-xs text-gray-500 mt-1">
@@ -2798,8 +2724,7 @@ export default function OwnerDashboard() {
                             type="button"
                             className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
                             onClick={() => {
-                              // TODO: Delete photo from server
-                              console.log('Delete photo:', photo.publicId)
+                              setUploadedPhotos(uploadedPhotos.filter((_, i) => i !== idx))
                             }}
                           >
                             ✕
@@ -2828,8 +2753,6 @@ export default function OwnerDashboard() {
                         url: URL.createObjectURL(file),
                         name: file.name
                       })
-                      console.log('Video selected:', file)
-                      // TODO: Upload to server/cloudinary
                     }
                   }}
                 />
@@ -2877,8 +2800,7 @@ export default function OwnerDashboard() {
                       type="button"
                       className="text-red-500 text-sm hover:underline mt-1"
                       onClick={() => {
-                        // TODO: Delete video from server
-                        console.log('Delete video')
+                        setUploadedVideo(null)
                       }}
                     >
                       Remove Video
@@ -2904,7 +2826,6 @@ export default function OwnerDashboard() {
                         url: URL.createObjectURL(file),
                         name: file.name
                       })
-                      console.log('360° image selected:', file)
                       // TODO: Upload to server/cloudinary
                     }
                   }}
@@ -2953,8 +2874,7 @@ export default function OwnerDashboard() {
                       type="button"
                       className="text-red-500 text-sm hover:underline mt-1"
                       onClick={() => {
-                        // TODO: Delete 360 view from server
-                        console.log('Delete 360° view')
+                        setUploaded360View(null)
                       }}
                     >
                       Remove 360° View

@@ -96,21 +96,16 @@ export const useAuthStore = create((set) => ({
   },
 
   verifyOTP: async (otpData) => {
-    console.log('[AUTH STORE] Starting OTP verification with:', otpData)
     set({ loading: true, error: null })
     try {
-      console.log('[AUTH STORE] Making API call to verify OTP')
       const response = await authAPI.verifyOTP(otpData)
-      console.log('[AUTH STORE] API response:', response.data)
       const { token, user } = response.data.data
-      console.log('[AUTH STORE] Extracted token and user:', { token, user })
       const mappedUser = mapBackendUserToFrontend(user)
       set({ token, user: mappedUser, isAuthenticated: true, loading: false })
       localStorage.setItem('token', token)
       localStorage.setItem('user', JSON.stringify(mappedUser))
       return response.data
     } catch (error) {
-      console.error('[AUTH STORE] OTP verification error:', error)
       const errorMsg = error.response?.data?.message || 'OTP verification failed'
       set({ error: errorMsg, loading: false })
       throw error
@@ -119,7 +114,7 @@ export const useAuthStore = create((set) => ({
 
   resendOTP: async (otpData) => {
     set({ loading: true, error: null })
-    try {
+    try {``
       const response = await authAPI.resendOTP(otpData)
       set({ loading: false })
       return response.data

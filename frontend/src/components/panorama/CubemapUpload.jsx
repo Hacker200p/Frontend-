@@ -18,11 +18,6 @@ const CubemapUpload = ({ onUploadSuccess }) => {
   const [showPreview, setShowPreview] = useState(false);
   const [previewUrl, setPreviewUrl] = useState(null);
 
-  // Debug: Log when showPreview changes
-  React.useEffect(() => {
-    console.log('showPreview changed to:', showPreview);
-  }, [showPreview]);
-
   const faceLabels = {
     front: '🧱 Front Wall',
     back: '🧱 Back Wall',

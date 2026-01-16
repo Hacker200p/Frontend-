@@ -1,6 +1,6 @@
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const { 
+import { 
   register, 
   login, 
   getMe, 
@@ -12,10 +12,10 @@ const {
   verifyPhoneChangeOTP,
   changePassword,
   uploadProfilePhoto
-} = require('../controllers/authController');
-const { protect } = require('../middleware/authMiddleware');
-const { validateRegister, validateLogin, handleValidationErrors } = require('../utils/validators');
-const upload = require('../middleware/uploadMiddleware');
+} from '../controllers/authController.js';
+import { protect } from '../middleware/authMiddleware.js';
+import { validateRegister, validateLogin, handleValidationErrors } from '../validators/validators.js';
+import upload from '../middleware/uploadMiddleware.js';
 
 // Registration with OTP verification
 router.post('/register', validateRegister, handleValidationErrors, register);
@@ -46,4 +46,4 @@ router.get('/payment-config', (req, res) => {
   });
 });
 
-module.exports = router;
+export default router;

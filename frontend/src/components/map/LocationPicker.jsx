@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import Map, { Marker, NavigationControl } from 'react-map-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { MapPin, X, Navigation } from 'lucide-react'
-import api from '../services/api'
+import api from '../../services/api'
 
 export default function LocationPicker({ initialLocation, onLocationSelect, onClose, hostelPhoto }) {
   const [mapboxToken, setMapboxToken] = useState('')

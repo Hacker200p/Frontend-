@@ -1,16 +1,16 @@
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const {
+import {
   createContract,
   getContract,
   signContract,
   uploadContractDocument,
   terminateContract,
   getOwnerContracts,
-} = require('../controllers/contractController');
-const { protect } = require('../middleware/authMiddleware');
-const { authorize } = require('../middleware/roleMiddleware');
-const upload = require('../middleware/uploadMiddleware');
+} from '../controllers/contractController.js';
+import { protect } from '../middleware/authMiddleware.js';
+import { authorize } from '../middleware/roleMiddleware.js';
+import upload from '../middleware/uploadMiddleware.js';
 
 router.use(protect);
 
@@ -21,4 +21,4 @@ router.put('/:id/sign', signContract);
 router.post('/:id/upload', authorize('owner'), upload.single('document'), uploadContractDocument);
 router.put('/:id/terminate', authorize('owner', 'master_admin'), terminateContract);
 
-module.exports = router;
+export default router;

@@ -1,4 +1,4 @@
-const cloudinary = require('cloudinary').v2;
+import { v2 as cloudinary } from 'cloudinary';
 
 // Configure Cloudinary only if credentials are available
 if (
@@ -16,4 +16,4 @@ if (
   console.log('Cloudinary credentials not configured - file uploads disabled');
 }
 
-module.exports = cloudinary;
+export default cloudinary;

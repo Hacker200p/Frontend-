@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const MAX_RETRIES = parseInt(process.env.MONGO_MAX_RETRIES || '5', 10);
 const RETRY_DELAY_MS = parseInt(process.env.MONGO_RETRY_DELAY || '5000', 10);
@@ -24,6 +24,17 @@ const connectDB = () => {
       });
       currentRetries = 0;
       console.log(`MongoDB Connected: ${conn.connection.host}`);
+      
+      // Create database indexes for better query performance (non-blocking)
+      if (process.env.NODE_ENV !== 'test') {
+        setTimeout(() => {
+          import('../utils/dbOptimization.js').then(({ createIndexes }) => {
+            createIndexes().catch(err => 
+              console.log('Index creation info:', err.message)
+            );
+          });
+        }, 3000);
+      }
     } catch (error) {
       currentRetries += 1;
       console.error(`MongoDB connection error (${currentRetries}/${MAX_RETRIES}): ${error.message}`);
@@ -63,4 +74,4 @@ const connectDB = () => {
   connectWithRetry();
 };
 
-module.exports = connectDB;
+export default connectDB;

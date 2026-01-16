@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import Map, { Marker, NavigationControl } from 'react-map-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { MapPin, Navigation, Search, X, Star, MapPinned } from 'lucide-react'
-import api from '../services/api'
+import api from '../../services/api'
 
 export default function HostelMapExplorer({ hostels = [], onHostelSelect, className = '' }) {
   const [mapboxToken, setMapboxToken] = useState('')
@@ -12,31 +12,7 @@ export default function HostelMapExplorer({ hostels = [], onHostelSelect, classN
     zoom: 12
   })
 
-  // Debug hostels data
-  useEffect(() => {
-    console.log('=== HostelMapExplorer Debug ===')
-    console.log('Total hostels received:', hostels.length)
-    console.log('Hostels with location:', hostels.filter(h => h.location?.coordinates).length)
-    console.log('Hostels with photos:', hostels.filter(h => h.photos?.length > 0).length)
-    
-    if (hostels.length > 0) {
-      console.log('\nFull hostel data:', JSON.stringify(hostels, null, 2))
-      
-      // Log each hostel's photo URLs
-      hostels.forEach((h, idx) => {
-        const hasLocation = h.location?.coordinates && h.location.coordinates.length === 2
-        const hasPhotos = h.photos && h.photos.length > 0
-        console.log(`\nHostel ${idx + 1} (${h.name}):`)
-        console.log(`  Location: ${hasLocation ? `[${h.location.coordinates[0]}, ${h.location.coordinates[1]}]` : 'MISSING'}`)
-        console.log(`  Photos: ${h.photos?.length || 0}`)
-        if (hasPhotos) {
-          console.log(`  First photo URL: ${h.photos[0].url || h.photos[0]}`)
-          console.log(`  Photo object:`, h.photos[0])
-        }
-      })
-    }
-    console.log('=== End Debug ===')
-  }, [hostels])
+
   
   const [selectedHostel, setSelectedHostel] = useState(null)
   const [sheetExpanded, setSheetExpanded] = useState(false)

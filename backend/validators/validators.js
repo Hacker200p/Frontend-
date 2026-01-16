@@ -1,4 +1,4 @@
-const { body, validationResult } = require('express-validator');
+import { body, validationResult } from 'express-validator';
 
 const validateRegister = [
     body('name').trim().notEmpty().withMessage('Name is required'),
@@ -62,7 +62,7 @@ const handleValidationErrors = (req, res, next) => {
     next();
 };
 
-module.exports = {
+export {
     validateRegister,
     validateLogin,
     handleValidationErrors,

@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const hostelSchema = new mongoose.Schema({
   name: {
@@ -106,4 +106,4 @@ const hostelSchema = new mongoose.Schema({
 
 hostelSchema.index({ location: '2dsphere' });
 
-module.exports = mongoose.model('Hostel', hostelSchema);
+export default mongoose.model('Hostel', hostelSchema);

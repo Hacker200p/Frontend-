@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const expenseSchema = new mongoose.Schema({
   tenant: {
@@ -49,4 +49,4 @@ const expenseSchema = new mongoose.Schema({
 
 expenseSchema.index({ tenant: 1, month: 1, year: 1 }, { unique: true });
 
-module.exports = mongoose.model('Expense', expenseSchema);
+export default mongoose.model('Expense', expenseSchema);
